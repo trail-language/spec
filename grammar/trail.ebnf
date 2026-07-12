@@ -1,0 +1,98 @@
+(* ============================================================================
+   Trail — grammar (EBNF)
+
+   Normative grammar for the Trail expression language. This mirrors the
+   reference implementation (Lark LALR, grammar/trail.lark); where the two
+   differ, the reference document (reference.md) governs.
+
+   Notation (W3C-style EBNF):
+     ::=        definition          |     alternation
+     ( )        grouping            ?     zero or one
+     *          zero or more        +     one or more
+     "x"        literal terminal    /re/  regular-expression terminal
+
+   Binary operators associate left-to-right except `^` (power) and the
+   `if/else` ternary, which associate right-to-left.
+   ============================================================================ *)
+
+(* ----- programs and the interactive dialect ----- *)
+
+program       ::= declaration+                       (* a .trail file *)
+repl_line     ::= meta_command | declaration | expression   (* interactive input *)
+meta_command  ::= "?" dotted?                        (* discovery; returns a catalog, not a panel *)
+
+declaration   ::= import_decl | func_def | universe_decl | model_decl
+                | signal_decl | strategy_decl | backtest_decl | learn_decl
+
+(* ----- declarations ----- *)
+
+import_decl   ::= "import" STRING
+func_def      ::= "def" NAME "(" ( NAME ( "," NAME )* )? ")" "=" expression
+universe_decl ::= "universe" NAME "=" dotted ( "where" expression )?
+
+model_decl    ::= "model" NAME ( "on" NAME )? ( "period" PERIOD )? "{" model_stmt+ "}"
+model_stmt    ::= "desc" STRING
+                | "on_missing" POLICY
+                | "export" NAME "=" expression
+                | "score" NAME "weight" NUMBER "{" score_case+ "else" NUMBER "}"
+                | NAME "=" expression
+score_case    ::= NUMBER "if" expression
+
+signal_decl   ::= "signal" NAME ( "on" NAME )? ( "period" PERIOD )? "=" expression
+
+strategy_decl ::= "strategy" NAME "{" strat_field+ "}"
+strat_field   ::= "universe" NAME
+                | "signal" expression
+                | "rebalance" PERIOD
+                | "select" "top" NUMBER ( "where" expression )?
+                | "weighting" WEIGHTING
+                | "hold_band" NUMBER ".." NUMBER
+                | "costs" NAME
+                | "gate" expression
+                | "fallback" NAME
+                | "exposure" expression
+
+backtest_decl ::= "backtest" NAME "from" DATE "to" DATE "{" bt_field+ "}"
+bt_field      ::= "benchmark" dotted | "pit_lag" DURATION | "report" NAME ( "," NAME )*
+
+learn_decl    ::= "learn" "weights" "for" NAME "{" learn_field+ "}"
+learn_field   ::= "segment" "by" dotted ( "," dotted )*
+                | "target" expression
+                | "method" NAME
+                | "validate" expression
+
+(* ----- expressions (loosest to tightest binding) ----- *)
+
+expression    ::= ternary
+ternary       ::= or_expr ( "if" or_expr "else" ternary )?
+or_expr       ::= and_expr ( "or" and_expr )*
+and_expr      ::= not_expr ( "and" not_expr )*
+not_expr      ::= "not" not_expr | comparison
+comparison    ::= coalesce ( CMP_OP coalesce )?
+                | coalesce "in" "(" literal ( "," literal )* ")"
+coalesce      ::= sum ( "??" sum )*
+sum           ::= product ( ( "+" | "-" ) product )*
+product       ::= power ( ( "*" | "/" | "%" ) power )*
+power         ::= unary ( "^" power )?                (* right-associative *)
+unary         ::= "-" unary | pinned
+pinned        ::= atom ( "@" NAME )?                  (* source pin *)
+atom          ::= call | reference | literal | "(" expression ")"
+call          ::= NAME "(" ( argument ( "," argument )* )? ")" ( "by" dotted )?
+argument      ::= NAME "=" expression | expression
+reference     ::= NAME ( "." NAME )*                  (* local name or dotted field *)
+dotted        ::= NAME ( "." NAME )*
+literal       ::= NUMBER | STRING | "true" | "false"
+
+(* ----- terminals ----- *)
+
+CMP_OP        ::= "==" | "!=" | ">=" | "<=" | ">" | "<"
+PERIOD        ::= "annual" | "quarterly" | "monthly" | "daily"
+POLICY        ::= "skip" | "zero" | "median"
+WEIGHTING     ::= "equal" | "value" | "signal"
+NUMBER        ::= /[0-9][0-9_]*(\.[0-9]+)?([eE][+-]?[0-9]+)?/
+STRING        ::= /"[^"]*"/
+NAME          ::= /[a-zA-Z_][a-zA-Z0-9_]*/            (* excluding reserved words; see reference Appendix A *)
+DATE          ::= /[0-9]{4}-[0-9]{2}(-[0-9]{2})?/
+DURATION      ::= /[0-9]+[dmy]/
+
+(* Comments run from `#` to end of line and are ignored, as is whitespace. *)
