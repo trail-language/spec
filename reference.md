@@ -753,6 +753,7 @@ Validators MUST report at minimum the following. Errors block compilation; warni
 | `E-FUNC-RECURSION` | error | 1 | a `def` calls itself directly or transitively | `def f(x) = f(x)` |
 | `E-FUNC-DUP` | error | 1 | two `def`s share a name | - |
 | `W-MEDIAN-DEFERRED` | warning | 1 only | `on_missing median` (treated `skip`) | |
+| `W-PERIOD-DEFERRED` | warning | 1 only | non-annual `period` (runs with annual-frequency semantics) | `model m period monthly { ... }` |
 | `W-KIND-STOCK-FLOW` | warning | 1 | bare `stock`/`flow` division without `avg2`/`lag` | `income.cogs / balance.inventory` |
 
 Reserved for future standardization: `E-TYPE-ORDER` (ordered comparison on strings), `E-ARG-STATIC` (non-literal window arguments).
