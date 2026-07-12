@@ -1,5 +1,5 @@
 (* ============================================================================
-   Trail — grammar (EBNF)
+   Trail - grammar (EBNF)
 
    Normative grammar for the Trail expression language. This mirrors the
    reference implementation (Lark LALR, grammar/trail.lark); where the two

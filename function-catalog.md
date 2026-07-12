@@ -3,12 +3,12 @@
 A survey of standard mathematical, statistical, calculus, geometry, and transformation
 functions, classified by how each fits Trail's execution model. Three tiers:
 
-- **P — Primitive.** Irreducible: introduces windowing, cross-sectional reduction, or a
+- **P - Primitive.** Irreducible: introduces windowing, cross-sectional reduction, or a
   transcendental that cannot be composed from `{+ - * / ^, sqrt, abs, log, exp}`. Implemented
   on the columnar engine (`ops.py`).
-- **D — Derived.** A pure composition of primitives (and other derived functions). Written
+- **D - Derived.** A pure composition of primitives (and other derived functions). Written
   **in Trail** as a `def` macro in `trail/stdlib/*.trail`; no engine code.
-- **R — Registered.** Needs matrix algebra, iteration, or state — the whitelisted Python
+- **R - Registered.** Needs matrix algebra, iteration, or state - the whitelisted Python
   escape hatch.
 
 Everything marked **D** below is implemented and tested (`tests/test_stdlib.py` expands all stdlib macros
@@ -52,13 +52,13 @@ Everything marked **D** below is implemented and tested (`tests/test_stdlib.py` 
 
 | Function | Tier | Note |
 |---|---|---|
-| `sin`, `cos`, `tan` | P | **primitive** — genuinely transcendental, not composable from exp of real args |
+| `sin`, `cos`, `tan` | P | **primitive** - genuinely transcendental, not composable from exp of real args |
 | `asin`, `acos`, `atan` | P | primitive |
 | `atan2(y,x)` | R/P | quadrant logic; add `arctan2` primitive when needed |
 | `pi()`, `tau()`, `euler()` | D | zero-arg constant macros |
 | `deg2rad`, `rad2deg` | D | `x*pi()/180`, `x*180/pi()` |
 
-## 5. Statistics — cross-sectional (within period[, `by` group])
+## 5. Statistics - cross-sectional (within period[, `by` group])
 
 | Function | Tier | Definition |
 |---|---|---|
@@ -76,7 +76,7 @@ Everything marked **D** below is implemented and tested (`tests/test_stdlib.py` 
 | `ntile(x,k)`, `neutralize(x,f)` | D | quantile bucketing, single-factor residual (stdlib/factor.trail) |
 | `rank_gauss` | R | rank→normal (needs probit) |
 
-## 6. Statistics — time-series (per security, trailing window)
+## 6. Statistics - time-series (per security, trailing window)
 
 | Function | Tier | Definition |
 |---|---|---|
@@ -100,7 +100,7 @@ Everything marked **D** below is implemented and tested (`tests/test_stdlib.py` 
 | `integral(x)` | D | `cumsum(x)` (rectangular) |
 | `trapz(x)` | D | `cumsum((x+lag(x,1))/2)` (trapezoidal) |
 | `cum_return(r)` | D | `cumprod(1+r) - 1` |
-| central differences, forward integrals | ✗ | **excluded** — reference the future (I4) |
+| central differences, forward integrals | ✗ | **excluded** - reference the future (I4) |
 
 ## 8. Geometry
 
@@ -129,7 +129,7 @@ Everything marked **D** below is implemented and tested (`tests/test_stdlib.py` 
 | Function | Tier | Note |
 |---|---|---|
 | `normal_pdf(x)` | D | `exp(-x*x/2)/sqrt(2*pi())` |
-| `normal_cdf(x)` | D | via a polynomial (Abramowitz–Stegun) approximation over `exp` |
+| `normal_cdf(x)` | D | via a polynomial (Abramowitz-Stegun) approximation over `exp` |
 | `erf`, exact `normal_cdf`, `t`/`chi2` CDFs | R | special functions |
 
 ## 11. Registered tier (out of scope for macros)
@@ -137,13 +137,13 @@ Everything marked **D** below is implemented and tested (`tests/test_stdlib.py` 
 Multivariate/OLS regression & residuals (IVOL, neutralization), covariance/correlation
 **matrices**, PCA/eigen-portfolios, Kalman/HP filters, GARCH, STL decomposition, Box-Cox
 with fitted λ, IRR/YTM root-finding, optimizers. Each is vectorizable *internally* but is
-neither a primitive nor a composition — the Python escape hatch (`§7.6`).
+neither a primitive nor a composition - the Python escape hatch (`§7.6`).
 
 ---
 
 ## The lesson
 
-Of the standard-function surface, the overwhelming majority is **derived** — pure composition
+Of the standard-function surface, the overwhelming majority is **derived** - pure composition
 of a small primitive core (48 primitives: shift, the rolling and cross-sectional reducers,
 scalar `sqrt/log/exp`, trig, rounding, and the cumulative ops). The 78 functions in
 `stdlib/*.trail` are all Trail source. Only genuine transcendentals (trig), irreducible

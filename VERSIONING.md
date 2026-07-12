@@ -4,19 +4,19 @@ The Trail specification is versioned with [Semantic Versioning](https://semver.o
 `MAJOR.MINOR.PATCH`, applied to the **language as a contract** (grammar, semantics, standard
 library, diagnostics).
 
-- **MAJOR** — a breaking change: a program that was valid and well-defined under the previous
+- **MAJOR** - a breaking change: a program that was valid and well-defined under the previous
   version parses differently, changes meaning, or becomes invalid. Examples: removing or
   repurposing a keyword, changing an operator's precedence or an existing function's semantics,
   removing a standard-library function.
-- **MINOR** — a backward-compatible addition: new syntax that doesn't change existing programs,
+- **MINOR** - a backward-compatible addition: new syntax that doesn't change existing programs,
   new primitives or standard-library functions, newly specified (previously reserved) behavior,
   new diagnostics.
-- **PATCH** — clarifications and corrections with no effect on conforming programs: wording,
+- **PATCH** - clarifications and corrections with no effect on conforming programs: wording,
   examples, non-normative notes, editorial fixes.
 
 ## Conformance phases vs. versions
 
-The reference (`reference.md`) defines **conformance phases** (1–4) describing which constructs
+The reference (`reference.md`) defines **conformance phases** (1-4) describing which constructs
 an implementation executes. Phases are a roadmap, not the version: a construct may be *specified*
 (and parse) in an early version while its *execution* lands in a later phase. Moving a construct
 from "parses" to "executes" is a MINOR change; changing already-executing behavior is MAJOR.

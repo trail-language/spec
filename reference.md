@@ -9,7 +9,7 @@ This document is the authoritative specification of the Trail language: its lexi
 
 ## 1. Introduction
 
-Trail is a small, total, declarative language for computing financial indicators, scores, and screening strategies over panels of securities. Trail programs are written by humans and by AI agents; they are data — stored, diffed, validated, generated — not code.
+Trail is a small, total, declarative language for computing financial indicators, scores, and screening strategies over panels of securities. Trail programs are written by humans and by AI agents; they are data - stored, diffed, validated, generated - not code.
 
 A representative program:
 
@@ -35,11 +35,11 @@ model quality on us_main period annual {
 
 Every conforming implementation MUST preserve:
 
-- **I1 — Panel model.** Every field and every expression denotes a value per `(security, period)` cell. There is no scalar context and no per-security iteration; the two axes are fixed.
-- **I2 — Totality.** Every Trail program terminates. The language has no loops and no recursion. User-defined functions (`def`, §8.8) are permitted but are **non-recursive expression macros** — inlined at their call sites before compilation — so they add no computational power that could threaten termination or static analysis.
-- **I3 — Static analyzability.** A program's complete data requirements — fields, sources, window lengths, functions — are derivable without executing it.
-- **I4 — Point-in-time safety.** No expression can observe data from a later period than the cell it computes. Forward-looking constructs are legal only inside `learn.target`.
-- **I5 — Vectorized execution.** Every construct lowers to columnar operations; implementations MUST NOT execute per-row interpreted code for any built-in.
+- **I1 - Panel model.** Every field and every expression denotes a value per `(security, period)` cell. There is no scalar context and no per-security iteration; the two axes are fixed.
+- **I2 - Totality.** Every Trail program terminates. The language has no loops and no recursion. User-defined functions (`def`, §8.8) are permitted but are **non-recursive expression macros** - inlined at their call sites before compilation - so they add no computational power that could threaten termination or static analysis.
+- **I3 - Static analyzability.** A program's complete data requirements - fields, sources, window lengths, functions - are derivable without executing it.
+- **I4 - Point-in-time safety.** No expression can observe data from a later period than the cell it computes. Forward-looking constructs are legal only inside `learn.target`.
+- **I5 - Vectorized execution.** Every construct lowers to columnar operations; implementations MUST NOT execute per-row interpreted code for any built-in.
 
 These invariants are what make Trail safe for agent authorship: a program that parses and validates is guaranteed to terminate, to have known data needs, and to be incapable of look-ahead bias.
 
@@ -52,31 +52,31 @@ These invariants are what make Trail safe for agent authorship: a program that p
 | 3 | `strategy`/`backtest` execution (gates, fallback sleeves, exposure) |
 | 4 | `learn` execution, weight tables |
 
-A phase-1 implementation MUST reject constructs it cannot execute using the diagnostics of §9 — never by silently ignoring them.
+A phase-1 implementation MUST reject constructs it cannot execute using the diagnostics of §9 - never by silently ignoring them.
 
 ### 1.3 Two dialects: model files and the interactive REPL
 
 Trail has two parse surfaces that share one lexer and one expression grammar but differ at the top level:
 
-- **The file grammar** (`start`, §12) — the language proper. A `.trail` file is a sequence of declarations (§8): pure panel computation, total, statically analyzable, side-effect-free. This is what agents generate, what `deps.extract` plans against, and what gets version-controlled. It contains **no** meta-commands.
-- **The interactive dialect** (`repl_line`, §12) — a strict superset for REPLs, notebooks, and other interactive front-ends. A repl line is a **meta-command**, a declaration, or a bare expression. It exists so interactive discovery and evaluation feel native without polluting the file format.
+- **The file grammar** (`start`, §12) - the language proper. A `.trail` file is a sequence of declarations (§8): pure panel computation, total, statically analyzable, side-effect-free. This is what agents generate, what `deps.extract` plans against, and what gets version-controlled. It contains **no** meta-commands.
+- **The interactive dialect** (`repl_line`, §12) - a strict superset for REPLs, notebooks, and other interactive front-ends. A repl line is a **meta-command**, a declaration, or a bare expression. It exists so interactive discovery and evaluation feel native without polluting the file format.
 
-This split is deliberate: discovery is an authoring-time question ("what *can* I write?"), not a computation ("what does this compute?"). Keeping meta-commands in the interactive dialect only means a model file stays a clean computation artifact — a meta-command in a file is a syntax error (mirroring how IPython magics are invalid in a `.py` module).
+This split is deliberate: discovery is an authoring-time question ("what *can* I write?"), not a computation ("what does this compute?"). Keeping meta-commands in the interactive dialect only means a model file stays a clean computation artifact - a meta-command in a file is a syntax error (mirroring how IPython magics are invalid in a `.py` module).
 
-**Meta-commands** begin with `?` and return a **catalog result** — a titled metadata table (fields, functions, sources), never a `(security × period)` panel. They are a distinct value domain from expressions; an implementation MUST NOT let a meta-command flow into panel computation.
+**Meta-commands** begin with `?` and return a **catalog result** - a titled metadata table (fields, functions, sources), never a `(security × period)` panel. They are a distinct value domain from expressions; an implementation MUST NOT let a meta-command flow into panel computation.
 
 | Form | Meaning |
 |---|---|
 | `?` | the full catalog: namespaces and their field counts, plus function/source totals |
-| `?<namespace>` | list the fields (and kinds) in a namespace — e.g. `?income` |
-| `?<namespace>.<field>` | describe one field (column, kind) — e.g. `?income.revenue` |
-| `?<function>` | describe a built-in (axis, arity, summary) — e.g. `?cagr` |
-| `?<source>` | describe a configured source (driver, options) — e.g. `?fmp` |
+| `?<namespace>` | list the fields (and kinds) in a namespace - e.g. `?income` |
+| `?<namespace>.<field>` | describe one field (column, kind) - e.g. `?income.revenue` |
+| `?<function>` | describe a built-in (axis, arity, summary) - e.g. `?cagr` |
+| `?<source>` | describe a configured source (driver, options) - e.g. `?fmp` |
 | `?fields` \| `?functions` \| `?sources` | list all fields / all functions / all configured sources |
 
 The resolver disambiguates a single `?<name>` by lookup order: exact field path → namespace → function → source → the `fields`/`functions`/`sources` category words → "unknown".
 
-**Discovery front-ends.** The catalog engine is a single core; meta-commands are one front-end onto it. The same core backs the `trail catalog [target]` CLI command (phase 1), and — as they land — an MCP discovery tool and Jupyter line/cell magics (`%trail`, `%%trail`). Field availability is reported from the schema in phase 1; once real source drivers exist (phase 2) discovery additionally reports **per-source** resolution, which doubles as the source coverage probe.
+**Discovery front-ends.** The catalog engine is a single core; meta-commands are one front-end onto it. The same core backs the `trail catalog [target]` CLI command (phase 1), and - as they land - an MCP discovery tool and Jupyter line/cell magics (`%trail`, `%%trail`). Field availability is reported from the schema in phase 1; once real source drivers exist (phase 2) discovery additionally reports **per-source** resolution, which doubles as the source coverage probe.
 
 Discovery reads only the registries (schema, built-in functions, configured sources) and never executes a program, so it is always safe and side-effect-free.
 
@@ -86,11 +86,11 @@ Discovery reads only the registries (schema, built-in functions, configured sour
 
 Grammar excerpts use Lark notation: `"literal"` terminals, `UPPER` token names, `lower` rules, `?rule` inlined-when-single-child, `x*`/`x+`/`x?` repetition. The complete normative grammar is §12.
 
-- **Panel** — a rectangular association from `(security, period)` to values; the sole evaluation domain.
-- **Cell** — one `(security, period)` position.
-- **Broadcast series** — a panel whose value is constant across the security axis (index levels, macro rates, universe aggregates).
-- **Group** — the set of cells a cross-sectional operator computes within: `(period × universe)`, optionally refined by a `by` field.
-- **PIT date** — the first calendar date at which a cell's value was knowable (filing date plus configured lag).
+- **Panel** - a rectangular association from `(security, period)` to values; the sole evaluation domain.
+- **Cell** - one `(security, period)` position.
+- **Broadcast series** - a panel whose value is constant across the security axis (index levels, macro rates, universe aggregates).
+- **Group** - the set of cells a cross-sectional operator computes within: `(period × universe)`, optionally refined by a `by` field.
+- **PIT date** - the first calendar date at which a cell's value was knowable (filing date plus configured lag).
 
 ---
 
@@ -150,9 +150,9 @@ The evaluation domain is the **panel**. `security` is an opaque canonical identi
 | BBB | 200 | 210 | 220 | 231 |
 | CCC | 300 | 270 | 300 | 330 |
 
-All arithmetic is cell-aligned on `(security, period)` — never positional. `income.net_income / income.revenue` divides each cell by the matching cell. A scalar literal broadcasts to every cell: `income.revenue * 2` doubles the grid.
+All arithmetic is cell-aligned on `(security, period)` - never positional. `income.net_income / income.revenue` divides each cell by the matching cell. A scalar literal broadcasts to every cell: `income.revenue * 2` doubles the grid.
 
-Broadcast series occupy the same domain with a constant security axis. `macro.risk_free` at 2024 has one value repeated for every security; `earnings_yield > macro.risk_free + 0.02` therefore compares each security's cell against the same hurdle — this is how "floating thresholds" work with no special construct.
+Broadcast series occupy the same domain with a constant security axis. `macro.risk_free` at 2024 has one value repeated for every security; `earnings_yield > macro.risk_free + 0.02` therefore compares each security's cell against the same hurdle - this is how "floating thresholds" work with no special construct.
 
 ### 4.2 Fields, namespaces, kinds
 
@@ -170,7 +170,7 @@ Schema fields are addressed by dotted path. Standard namespaces:
 | `estimates.*` | analyst estimates (PIT-legal, §4.5) | `eps_fwd`, `eps_growth_fwd`, `revision_score` |
 | `insider.*`, `ownership.*`, `sentiment.*`, `attention.*` | event-derived panels, pre-aggregated by the data layer | `insider.net_buy_value_6m`, `ownership.short_interest_pct` |
 
-Every field carries a **kind**: `flow` (income/cash items, summable across periods), `stock` (balance items, point-in-time snapshots), `ratio`, `per_share`, `price`, `meta`, `days`, `count`. Kinds drive `ttm`/`avg2` behavior and lint diagnostics. Kind violations are warnings, not errors — the canonical example:
+Every field carries a **kind**: `flow` (income/cash items, summable across periods), `stock` (balance items, point-in-time snapshots), `ratio`, `per_share`, `price`, `meta`, `days`, `count`. Kinds drive `ttm`/`avg2` behavior and lint diagnostics. Kind violations are warnings, not errors - the canonical example:
 
 ```trail
 inventory_turnover = income.cogs / balance.inventory          # W-KIND-STOCK-FLOW
@@ -190,7 +190,7 @@ Missing data is **null** (not NaN). Null is an ordinary value that flows through
    score s weight 1 { 2 if x > 0.12; else 0 }
    ```
    Note the asymmetry with rule 1: a *bare* comparison stored in a flag stays null; only *match positions* treat null as non-matching.
-   **Exception — the all-null case:** a score whose *every* case condition is null (all its inputs are missing) is itself **null**, not the `else` value. This is what makes `on_missing skip` meaningful — a metric a company simply cannot compute (e.g. a bank with no inventory) drops out and renormalizes, rather than silently scoring `else`. If at least one condition is evaluable (true or false), normal first-match-wins applies.
+   **Exception - the all-null case:** a score whose *every* case condition is null (all its inputs are missing) is itself **null**, not the `else` value. This is what makes `on_missing skip` meaningful - a metric a company simply cannot compute (e.g. a bank with no inventory) drops out and renormalizes, rather than silently scoring `else`. If at least one condition is evaluable (true or false), normal first-match-wins applies.
 5. **Coalesce:** `x ?? y` yields `x` where `x` is non-null, else `y`. Left-associative chains: `a ?? b ?? 0`.
 6. **Boolean connectives** follow three-valued logic: `true or null → true`, `false and null → false`, `true and null → null`, `not null → null`. In match positions, rule 4 then governs the residual null.
 7. **Windowed operators require full windows.** `roll_*(x, n)` yields null until `n` consecutive periods are available (`min_samples = n`). Partial windows would silently change 3-vs-5-year comparisons, so they are forbidden. Cross-sectional operators (`zscore`, `rank`, …) skip null cells: the group is the non-null members.
@@ -207,10 +207,10 @@ Each `model`/`signal` declares `period annual | quarterly | monthly` (default `a
 
 Frequency alignment rules:
 
-1. In `annual`/`quarterly` contexts, `price.*` resolves **as of the period's PIT date** (§4.5) — never the fiscal period end.
+1. In `annual`/`quarterly` contexts, `price.*` resolves **as of the period's PIT date** (§4.5) - never the fiscal period end.
 2. In `monthly` contexts *(phase 2)*, statement fields resolve to the last PIT-known value, forward-filled.
 3. `quarterly(x)` / `annual(x)` override frequency for a subexpression *(phase 2)*.
-4. `sply(x)` *(phase 2)* is "same period last year": in a quarterly context, `sply(income.eps)` at FQ3-2024 is FQ3-2023 — equivalent to `lag(x, 4)` only when no quarters are missing, which is why it is its own operator.
+4. `sply(x)` *(phase 2)* is "same period last year": in a quarterly context, `sply(income.eps)` at FQ3-2024 is FQ3-2023 - equivalent to `lag(x, 4)` only when no quarters are missing, which is why it is its own operator.
 5. `ttm(x)` *(phase 2)* is kind-aware: rolling 4-quarter **sum** for `flow` fields, **latest value** for `stock` fields.
 
 **Worked PIT example.** Company AAA files FY2023 results on 2024-02-15; the backtest declares `pit_lag 45d`. The FY2023 cell's PIT date is 2024-03-31. Then, inside `period annual`:
@@ -219,7 +219,7 @@ Frequency alignment rules:
 pe = price.adj_close / income.eps_diluted
 ```
 
-`price.adj_close` at (AAA, FY2023) is the closing price on 2024-03-31 (or the nearest **prior** trading day) — the price at the first moment a strategy could have known the FY2023 EPS. This alignment is engine-enforced and cannot be expressed incorrectly in the language.
+`price.adj_close` at (AAA, FY2023) is the closing price on 2024-03-31 (or the nearest **prior** trading day) - the price at the first moment a strategy could have known the FY2023 EPS. This alignment is engine-enforced and cannot be expressed incorrectly in the language.
 
 ### 4.5 Point-in-time invariant
 
@@ -229,7 +229,7 @@ pe = price.adj_close / income.eps_diluted
 
 ### 4.6 Universe scoping
 
-Cross-sectional operators and universe aggregates compute within `(period × universe)` — the universe the enclosing `model`/`signal` is bound to via `on`. The same expression yields different values under different universes:
+Cross-sectional operators and universe aggregates compute within `(period × universe)` - the universe the enclosing `model`/`signal` is bound to via `on`. The same expression yields different values under different universes:
 
 ```trail
 universe all  = stocks where meta.is_active
@@ -270,7 +270,7 @@ rev_gap = abs(income.revenue @ fmp - income.revenue @ edgar)
         / (income.revenue @ edgar ?? income.revenue @ fmp)      # source-disagreement forensics
 ```
 
-`(a + b) @ fmp` is a syntax error — pin the fields, not the arithmetic.
+`(a + b) @ fmp` is a syntax error - pin the fields, not the arithmetic.
 
 ### 5.3 Source names
 
@@ -278,7 +278,7 @@ The names after `@` are exactly the keys of the configuration's `sources` map (�
 
 ### 5.4 Identity and alignment (engine contract)
 
-Panels from different sources align on a **canonical security identity** (mapped per source from ticker/CIK/ISIN/FIGI) and **canonical fiscal periods**. PIT dates are tracked per `(security, source)` — the same FY2023 figure may become knowable on different dates from different sources, and PIT alignment (§4.4) uses the resolving source's date. This identity layer is a data-plane obligation; the language never manipulates raw source symbols.
+Panels from different sources align on a **canonical security identity** (mapped per source from ticker/CIK/ISIN/FIGI) and **canonical fiscal periods**. PIT dates are tracked per `(security, source)` - the same FY2023 figure may become knowable on different dates from different sources, and PIT alignment (§4.4) uses the resolving source's date. This identity layer is a data-plane obligation; the language never manipulates raw source symbols.
 
 ---
 
@@ -301,51 +301,51 @@ Loosest to tightest; parenthesize to override.
 | 9 | `^` | right | `2 ^ 3 ^ 2` = `2 ^ (3 ^ 2)` = 512 |
 | 10 | unary `-` | prefix | `-a ^ 2` = `-(a ^ 2)` … see note |
 | 11 | `@ source` | postfix | `x @ fmp ?? y` = `(x @ fmp) ?? y` |
-| 12 | call, ref, literal, `( )` | — | |
+| 12 | call, ref, literal, `( )` | - | |
 
 Note on unary minus and `^`: `-x ^ 2` parses as `-(x ^ 2)` (power binds tighter). Write `(-x) ^ 2` when that is meant.
 
 ### 6.2 Operator semantics
 
-- **Arithmetic** `+ - * / % ^` — cell-wise; null per §4.3 rules 1–3. `^` accepts real exponents (`x ^ (1/3)` is a cube root).
-- **Comparisons** — produce boolean panels. Comparing a string field to a string literal is legal (`meta.sector == "Tech"`); ordering comparisons on strings are `E-TYPE-ORDER` *(reserved; not checked in phase 1)*.
-- **`in`** — membership against a parenthesized literal list: `meta.exchange in ("NYSE", "NASDAQ")`. The list contains literals only, not expressions.
-- **`??`** — coalesce (§4.3 rule 5).
-- **Ternary** `v if c else e` — cell-wise selection; both branches are (conceptually) evaluated everywhere, which is unobservable since expressions have no effects. Chains right-associate, giving first-match-wins reading order:
+- **Arithmetic** `+ - * / % ^` - cell-wise; null per §4.3 rules 1-3. `^` accepts real exponents (`x ^ (1/3)` is a cube root).
+- **Comparisons** - produce boolean panels. Comparing a string field to a string literal is legal (`meta.sector == "Tech"`); ordering comparisons on strings are `E-TYPE-ORDER` *(reserved; not checked in phase 1)*.
+- **`in`** - membership against a parenthesized literal list: `meta.exchange in ("NYSE", "NASDAQ")`. The list contains literals only, not expressions.
+- **`??`** - coalesce (§4.3 rule 5).
+- **Ternary** `v if c else e` - cell-wise selection; both branches are (conceptually) evaluated everywhere, which is unobservable since expressions have no effects. Chains right-associate, giving first-match-wins reading order:
   ```trail
   size_bucket = 3 if meta.market_cap > 10e9 else 2 if meta.market_cap > 2e9 else 1
   ```
-- **Name references** — a bare NAME resolves to an earlier assignment in the same model (§8.3), never to a field. **Field references** are always dotted. This rule is what makes `roa > lag(roa, 1)` unambiguous.
-- **Cross-model references** *(phase 2)* — `quality.composite` (a model name dotted with an export) reads another model's export as a field. The validator resolves model exports before schema namespaces.
+- **Name references** - a bare NAME resolves to an earlier assignment in the same model (§8.3), never to a field. **Field references** are always dotted. This rule is what makes `roa > lag(roa, 1)` unambiguous.
+- **Cross-model references** *(phase 2)* - `quality.composite` (a model name dotted with an export) reads another model's export as a field. The validator resolves model exports before schema namespaces.
 
 ---
 
 ## 7. Built-in functions
 
-Trail's functionality lives in functions, not operators — the grammar carries only arithmetic, comparison, boolean, ternary, `??`, and call syntax (§6). Functions come in three layers:
+Trail's functionality lives in functions, not operators - the grammar carries only arithmetic, comparison, boolean, ternary, `??`, and call syntax (§6). Functions come in three layers:
 
-- **Primitives** — irreducible operations that introduce the windowing or cross-sectional machinery itself (`lag`, `cummax`, the `roll_*` reducers, the `xs_*` reducers, `rank`, and scalar math like `sqrt`/`log`/`exp`). These cannot be expressed by composition and are implemented directly on the columnar engine. This section catalogs them.
-- **Derived functions** — pure compositions of primitives (`yoy = x/lag(x,1)-1`, `avg2`, `beta = roll_cov/roll_var`, most financial ratios, most published factors). These are written **in Trail itself** as a standard library (§8.8), not hand-coded on the engine.
-- **Registered functions** — the escape hatch for math that is neither a primitive nor a composition — multivariate regression, matrix/state-space methods (§7.6).
+- **Primitives** - irreducible operations that introduce the windowing or cross-sectional machinery itself (`lag`, `cummax`, the `roll_*` reducers, the `xs_*` reducers, `rank`, and scalar math like `sqrt`/`log`/`exp`). These cannot be expressed by composition and are implemented directly on the columnar engine. This section catalogs them.
+- **Derived functions** - pure compositions of primitives (`yoy = x/lag(x,1)-1`, `avg2`, `beta = roll_cov/roll_var`, most financial ratios, most published factors). These are written **in Trail itself** as a standard library (§8.8), not hand-coded on the engine.
+- **Registered functions** - the escape hatch for math that is neither a primitive nor a composition - multivariate regression, matrix/state-space methods (§7.6).
 
 A `def` (§8.8) may compose primitives and other derived functions; it can never define a new primitive. Discovery (§1.3) reports which layer each function belongs to.
 
 Axis legend: **T** = time-series (within each security, along periods), **X** = cross-sectional (within each period, across the enclosing universe; accepts trailing `by <field>`), **E** = elementwise, **M** = model-context.
 
-Windows, quantiles, and periods (`n`, `q`, `p`) MUST be numeric literals (invariant I3 — static data requirements). `cagr(x, n)` with a computed `n` is `E-ARG-STATIC` *(reserved; enforced structurally in phase 1 by literal-only compilation of these arguments)*.
+Windows, quantiles, and periods (`n`, `q`, `p`) MUST be numeric literals (invariant I3 - static data requirements). `cagr(x, n)` with a computed `n` is `E-ARG-STATIC` *(reserved; enforced structurally in phase 1 by literal-only compilation of these arguments)*.
 
 ### 7.1 Time-series functions (T)
 
 All operate within each security along the period axis and require the panel sorted by period (an engine guarantee).
 
-**`lag(x, n)`** — value `n` periods earlier; the first `n` periods are null.
+**`lag(x, n)`** - value `n` periods earlier; the first `n` periods are null.
 
 ```
 x        : 100  110  121  133.1
 lag(x,1) : null 100  110  121
 ```
 
-**`roll_mean(x, n)`, `roll_sum`, `roll_std`, `roll_var`, `roll_max`, `roll_min`** — rolling window of exactly `n` periods; null until the window is full. `roll_std`/`roll_var` use **sample** statistics (ddof = 1).
+**`roll_mean(x, n)`, `roll_sum`, `roll_std`, `roll_var`, `roll_max`, `roll_min`** - rolling window of exactly `n` periods; null until the window is full. `roll_std`/`roll_var` use **sample** statistics (ddof = 1).
 
 ```
 x            : 10   20   30
@@ -359,28 +359,28 @@ The workbook's dominant idiom composes directly:
 improving = roll_mean(fcf_per_share, 3) > roll_mean(fcf_per_share, 5)
 ```
 
-**`roll_quantile(x, n, q)`** — rolling `q`-quantile over the window. Historical VaR at 95%: `roll_quantile(price.return, 60, 0.05)`. Quantile interpolation is implementation-defined in v0.2 *(standardization pending)*.
+**`roll_quantile(x, n, q)`** - rolling `q`-quantile over the window. Historical VaR at 95%: `roll_quantile(price.return, 60, 0.05)`. Quantile interpolation is implementation-defined in v0.2 *(standardization pending)*.
 
-**`roll_tail_mean(x, n, q)`** *(phase 2)* — mean of window values ≤ the `q`-quantile: historical CVaR / expected shortfall.
+**`roll_tail_mean(x, n, q)`** *(phase 2)* - mean of window values ≤ the `q`-quantile: historical CVaR / expected shortfall.
 
-**`roll_cov(x, y, n)` / `roll_corr(x, y, n)`** — rolling covariance / Pearson correlation of two panels.
+**`roll_cov(x, y, n)` / `roll_corr(x, y, n)`** - rolling covariance / Pearson correlation of two panels.
 
-**`beta(x, bench, n)`** — `roll_cov(x, bench, n) / roll_var(bench, n)`. With a broadcast benchmark:
+**`beta(x, bench, n)`** - `roll_cov(x, bench, n) / roll_var(bench, n)`. With a broadcast benchmark:
 
 ```trail
 beta_36m   = beta(price.return, index.spx.return, 36)     # monthly context
 beta_blume = 0.67 * beta_36m + 0.33
 ```
 
-**`cummax(x)` / `cumsum(x)` / `cumprod(x)` / `cummin(x)`** — expanding max/sum/product/min from each security's first period (causal; the building blocks for discrete integrals and compounding).
+**`cummax(x)` / `cumsum(x)` / `cumprod(x)` / `cummin(x)`** - expanding max/sum/product/min from each security's first period (causal; the building blocks for discrete integrals and compounding).
 
-**`roll_median(x, n)` / `roll_skew(x, n)`** — rolling median and skewness over a trailing window.
+**`roll_median(x, n)` / `roll_skew(x, n)`** - rolling median and skewness over a trailing window.
 
-**`ewm_mean(x, span)` / `ewm_std(x, span)`** — exponentially-weighted moving mean / std (decay recurrence; the standard EWMA volatility estimator).
+**`ewm_mean(x, span)` / `ewm_std(x, span)`** - exponentially-weighted moving mean / std (decay recurrence; the standard EWMA volatility estimator).
 
-**`decay_linear(x, n)`** — linearly-decayed weighted mean over a trailing window (most recent period weighted highest); a common alpha-factor primitive.
+**`decay_linear(x, n)`** - linearly-decayed weighted mean over a trailing window (most recent period weighted highest); a common alpha-factor primitive.
 
-**`drawdown(x)`** — `x / cummax(x) - 1`.
+**`drawdown(x)`** - `x / cummax(x) - 1`.
 
 ```
 x           : 10    8     12
@@ -390,59 +390,59 @@ drawdown(x) : 0.0  -0.2   0.0
 
 Per-security max drawdown over 5 years (monthly context): `roll_min(drawdown(price.adj_close), 60)`.
 
-> **Now derived (stdlib).** `yoy`, `avg2`, `drawdown`, `cagr`, `increase`, `roll_cov`, `roll_corr`, `beta`, and `pctile` are **not** primitives — they are `def` macros in `stdlib/timeseries.trail` (compositions of `lag`/`roll_*`/`cummax`/`rank`/`xs_count`). They are documented here for reference; the engine no longer implements them. Discovery (§1.3) tags them `derived`.
+> **Now derived (stdlib).** `yoy`, `avg2`, `drawdown`, `cagr`, `increase`, `roll_cov`, `roll_corr`, `beta`, and `pctile` are **not** primitives - they are `def` macros in `stdlib/timeseries.trail` (compositions of `lag`/`roll_*`/`cummax`/`rank`/`xs_count`). They are documented here for reference; the engine no longer implements them. Discovery (§1.3) tags them `derived`.
 
-**`yoy(x)`** — `x / lag(x, 1) - 1`.
+**`yoy(x)`** - `x / lag(x, 1) - 1`.
 
-**`increase(x, n)`** — `(end' − start') / start'` after the negative-value shift rule (§7.4).
+**`increase(x, n)`** - `(end' − start') / start'` after the negative-value shift rule (§7.4).
 
-**`cagr(x, n)`** — `(end'/start')^(1/n) − 1` after the shift rule.
+**`cagr(x, n)`** - `(end'/start')^(1/n) − 1` after the shift rule.
 
 ```
 x (n=3)          : 100 … 133.1     → cagr = (133.1/100)^(1/3) − 1 = 0.10
 x (n=3, signed)  : −10 … 60        → start′=10, end′=80 → (80/10)^(1/3) − 1 = 1.00
 ```
 
-**`avg2(x)`** — `(x + lag(x,1)) / 2`: start/end balance-sheet averaging for turnover and days ratios.
+**`avg2(x)`** - `(x + lag(x,1)) / 2`: start/end balance-sheet averaging for turnover and days ratios.
 
 ```trail
 dso = (avg2(balance.accounts_receivable) / income.revenue) * 365
 ```
 
-**`sply(x)`**, **`ttm(x)`** *(phase 2)* — see §4.4.
+**`sply(x)`**, **`ttm(x)`** *(phase 2)* - see §4.4.
 
 ### 7.2 Cross-sectional functions (X)
 
 All compute within the **group**: `(period × universe)`, refined to `(period × universe × field value)` by a trailing `by <field>`. Null cells are excluded from the group.
 
-**`zscore(x)`** — `(x − mean(group)) / std(group)`, sample std (ddof = 1); null if the group std is null or zero.
+**`zscore(x)`** - `(x − mean(group)) / std(group)`, sample std (ddof = 1); null if the group std is null or zero.
 
 ```
 group values {1, 3, 10, 30}: mean 11, std ≈ 13.24
 zscore → {−0.76, −0.60, −0.08, +1.44}
 ```
 
-Sector-neutral form — each security standardized against its own sector:
+Sector-neutral form - each security standardized against its own sector:
 
 ```trail
 z = zscore(gross_profitability) by meta.sector
 ```
 
-**`rank(x)`** — ascending, 1-based, average ties: `{5, 5, 7} → {1.5, 1.5, 3}`.
+**`rank(x)`** - ascending, 1-based, average ties: `{5, 5, 7} → {1.5, 1.5, 3}`.
 
-**`pctile(x)`** — `(rank − 1) / (count − 1)` ∈ [0, 1]: `{1, 3, 10, 30} → {0, ⅓, ⅔, 1}`.
+**`pctile(x)`** - `(rank − 1) / (count − 1)` ∈ [0, 1]: `{1, 3, 10, 30} → {0, ⅓, ⅔, 1}`.
 
-**`winsorize(x, p)`** — clip to the group's `[p, 1−p]` quantiles; standard pre-processing before z-scoring heavy-tailed ratios:
+**`winsorize(x, p)`** - clip to the group's `[p, 1−p]` quantiles; standard pre-processing before z-scoring heavy-tailed ratios:
 
 ```trail
 z_clean = zscore(winsorize(accruals_ratio, 0.01))
 ```
 
-**`xs_mean(x)`, `xs_median(x)`, `xs_sum(x)`** — reduce the group to one value and **broadcast it back** to every member cell.
+**`xs_mean(x)`, `xs_median(x)`, `xs_sum(x)`** - reduce the group to one value and **broadcast it back** to every member cell.
 
-**`xs_std(x)` / `xs_var(x)` / `xs_min(x)` / `xs_max(x)` / `xs_count(x)` / `xs_quantile(x, q)`** — group standard deviation / variance / min / max / non-null count / q-quantile, each broadcast back to every member (the reducers behind `demean`, `robust_zscore`, `minmax`, … in §8.8).
+**`xs_std(x)` / `xs_var(x)` / `xs_min(x)` / `xs_max(x)` / `xs_count(x)` / `xs_quantile(x, q)`** - group standard deviation / variance / min / max / non-null count / q-quantile, each broadcast back to every member (the reducers behind `demean`, `robust_zscore`, `minmax`, … in §8.8).
 
-**`xs_frac(cond)`** — fraction of the group where `cond` is true, broadcast back. Market breadth:
+**`xs_frac(cond)`** - fraction of the group where `cond` is true, broadcast back. Market breadth:
 
 ```
 cond: {AAA: true, BBB: false, CCC: true, DDD: false} → xs_frac = 0.5 for every security
@@ -453,7 +453,7 @@ signal breadth on us_main period monthly =
     xs_frac(price.adj_close > roll_mean(price.adj_close, 10))
 ```
 
-Because `xs_*` values depend on the entire group, changing universe membership changes every dependent cell — implementations may not cache them across universe edits.
+Because `xs_*` values depend on the entire group, changing universe membership changes every dependent cell - implementations may not cache them across universe edits.
 
 ### 7.3 Elementwise functions (E)
 
@@ -465,7 +465,7 @@ Because `xs_*` values depend on the entire group, changing universe membership c
 | `exp(x)` | eˣ | `o_prob = exp(o) / (1 + exp(o))` |
 | `clamp(x, lo, hi)` | clip to `[lo, hi]`; `lo`/`hi` literals | `exposure clamp(0.15 / vol, 0, 1)` |
 | `min(a, b)` / `max(a, b)` | cell-wise pair min/max | `min(r - target, 0)` (downside leg) |
-| `sin`/`cos`/`tan`, `asin`/`acos`/`atan(x)` | trigonometry (radians) — transcendental primitives | |
+| `sin`/`cos`/`tan`, `asin`/`acos`/`atan(x)` | trigonometry (radians) - transcendental primitives | |
 | `floor`/`ceil`/`round(x)` | round to integer | |
 | `count(b1, …, bk)` | sum of boolean panels as integers (k ≥ 1); null flags propagate null (§4.3) | Piotroski: `count(f1, …, f9)` |
 
@@ -483,7 +483,7 @@ Rationale: preserves growth-direction semantics across sign changes instead of y
 
 ### 7.5 Model-context functions (M)
 
-**`weighted_score()`** — legal only as the complete right-hand side of a model statement. Over the model's `score` declarations `(sᵢ, wᵢ)`, with `maxᵢ` = the maximum of scoreᵢ's literal case/else values:
+**`weighted_score()`** - legal only as the complete right-hand side of a model statement. Over the model's `score` declarations `(sᵢ, wᵢ)`, with `maxᵢ` = the maximum of scoreᵢ's literal case/else values:
 
 ```
 numerator   = Σ coalesce(sᵢ · wᵢ, 0)
@@ -504,7 +504,7 @@ result      = numerator / denominator      (null if denominator = 0)
 
 ### 7.6 Registered functions *(phase 2)*
 
-Deployment-whitelisted, kind-typed, vectorized host functions — the escape hatch for math outside panel algebra (multivariate regression residuals, DCF table models). Calls are grammatically ordinary; §11 specifies the ABI. Standard packs: statistical (`ols_residual`, `ff3_residual`) and valuation (`dcf_two_stage`, `gurufocus_projected_fcf`, `peter_lynch_fair_value`, `growth_factor`).
+Deployment-whitelisted, kind-typed, vectorized host functions - the escape hatch for math outside panel algebra (multivariate regression residuals, DCF table models). Calls are grammatically ordinary; §11 specifies the ABI. Standard packs: statistical (`ols_residual`, `ff3_residual`) and valuation (`dcf_two_stage`, `gurufocus_projected_fcf`, `peter_lynch_fair_value`, `growth_factor`).
 
 ```trail
 export ivol = roll_std(ff3_residual(price.return, 36), 36)
@@ -530,7 +530,7 @@ Textual inclusion relative to the importing file; the included declarations beha
 universe NAME = root [where expr]
 ```
 
-`root` is `stocks` (the merged canonical listing), a pinned listing (`fmp.stocks`), or **another universe's name** — universes compose:
+`root` is `stocks` (the merged canonical listing), a pinned listing (`fmp.stocks`), or **another universe's name** - universes compose:
 
 ```trail
 universe us_main = stocks where meta.exchange in ("NYSE", "NASDAQ") and meta.is_active
@@ -538,7 +538,7 @@ universe nonfin  = us_main where meta.sector != "Financials"
 universe liquid  = nonfin where meta.market_cap > 200e6
 ```
 
-The `where` expression is an ordinary boolean expression over schema fields (and, phase 2, cross-model exports — `sharia.compliant`). Membership is evaluated per period (§4.6).
+The `where` expression is an ordinary boolean expression over schema fields (and, phase 2, cross-model exports - `sharia.compliant`). Membership is evaluated per period (§4.6).
 
 ### 8.3 `model`
 
@@ -552,11 +552,11 @@ model NAME [on UNIVERSE] [period PERIOD] {
 
 Defaults: `period annual`; `on_missing skip`. `on` may be omitted when the program declares **at most one** universe: with exactly one, that universe is bound; with none, the model runs over the full panel (useful for scratch scripts and fixtures). Omitting `on` while multiple universes are declared is `E-UNIVERSE-UNKNOWN`.
 
-**Assignments** — `name = expr` binds a panel visible to *later* statements in the same model. Top-to-bottom scoping; forward references are `E-NAME-UNDEFINED`; rebinding is `E-NAME-REBOUND`.
+**Assignments** - `name = expr` binds a panel visible to *later* statements in the same model. Top-to-bottom scoping; forward references are `E-NAME-UNDEFINED`; rebinding is `E-NAME-REBOUND`.
 
-**`export name = expr`** — an assignment that is also materialized: it appears in the model's output and (phase 2) is addressable program-wide as `MODEL.name`. Exports are the model's only externally visible effect.
+**`export name = expr`** - an assignment that is also materialized: it appears in the model's output and (phase 2) is addressable program-wide as `MODEL.name`. Exports are the model's only externally visible effect.
 
-**`score name weight N { … }`** — ordered, first-match-wins cases ending in a mandatory `else`:
+**`score name weight N { … }`** - ordered, first-match-wins cases ending in a mandatory `else`:
 
 ```trail
 score revenue_growth_score weight 7 {
@@ -566,7 +566,7 @@ score revenue_growth_score weight 7 {
 }
 ```
 
-Per cell: cases are tested top to bottom; the first true condition's value is the result; null conditions do not match (§4.3 rule 4); if none match, the `else` value; and if *every* condition is null the score is null (§4.3 rule 4, all-null case). Case values and the `else` value MUST be non-negative numeric literals — enforced at parse time (a non-literal there is a syntax error, not a deferred diagnostic). Numeric-literal values are what let `weighted_score()` compute each score's maximum statically. Conditions are arbitrary boolean expressions, including references to other scores or macro series (floating hurdles, §4.1). `weight` is metadata: it does not affect the score panel itself, only `weighted_score()` and phase-4 weight learning, where declared weights are **priors** that a learned weight table may override without touching source.
+Per cell: cases are tested top to bottom; the first true condition's value is the result; null conditions do not match (§4.3 rule 4); if none match, the `else` value; and if *every* condition is null the score is null (§4.3 rule 4, all-null case). Case values and the `else` value MUST be non-negative numeric literals - enforced at parse time (a non-literal there is a syntax error, not a deferred diagnostic). Numeric-literal values are what let `weighted_score()` compute each score's maximum statically. Conditions are arbitrary boolean expressions, including references to other scores or macro series (floating hurdles, §4.1). `weight` is metadata: it does not affect the score panel itself, only `weighted_score()` and phase-4 weight learning, where declared weights are **priors** that a learned weight table may override without touching source.
 
 A score declaration binds its name like an assignment: later statements may reference it.
 
@@ -637,7 +637,7 @@ Field semantics:
 | `rebalance` | evaluation schedule | required |
 | `select top N [where c]` | take best N by signal after filtering by `c` | required |
 | `weighting` | `equal` \| `value` (by `meta.market_cap`) \| `signal` (proportional) | `equal` |
-| `hold_band LO .. HI` | hysteresis: a current holding is kept while its rank stays within `HI × N`; a new name enters only if ranked within `LO × N` — cuts churn at the boundary | none |
+| `hold_band LO .. HI` | hysteresis: a current holding is kept while its rank stays within `HI × N`; a new name enters only if ranked within `LO × N` - cuts churn at the boundary | none |
 | `gate` | broadcast boolean; when false the entire book moves to `fallback` | always-on |
 | `fallback` | `cash` (0 return) \| `tbills` (accrues `macro.risk_free`) \| a declared index | `cash` |
 | `exposure` | per-period equity fraction, clamped to [0,1]; remainder in `fallback` | `1` |
@@ -650,7 +650,7 @@ Field semantics:
 3. Evaluate `signal` at `t`; apply `select`'s `where`; take `top N` with `hold_band` hysteresis against current holdings.
 4. Weight per `weighting`, scale by `exposure(t)`, book `costs`.
 
-**Example — trend-gated momentum (Faber filter + vol scaling):**
+**Example - trend-gated momentum (Faber filter + vol scaling):**
 
 ```trail
 strategy trend_momentum {
@@ -684,7 +684,7 @@ backtest trend_momentum from 2010-01 to 2025-12 {
 }
 ```
 
-`pit_lag` sets the filing-date lag used for all PIT alignment (§4.4) in this run. Report metrics are engine-computed over the simulated return stream — portfolio-level risk metrics live here, while §7.1's operators build per-security *features*.
+`pit_lag` sets the filing-date lag used for all PIT alignment (§4.4) in this run. Report metrics are engine-computed over the simulated return stream - portfolio-level risk metrics live here, while §7.1's operators build per-security *features*.
 
 ### 8.7 `learn` *(execution: phase 4)*
 
@@ -708,7 +708,7 @@ learn weights for fundamentals {
 
 Semantics: per segment, estimate score weights against the forward-return target under the named method, validated as declared; output is a **weight table** (data, not code) the runtime may bind in place of the model's `weight` priors. Method and validation vocabularies are engine-defined *(finalized with phase 4)*.
 
-### 8.8 `def` — user and standard-library functions
+### 8.8 `def` - user and standard-library functions
 
 ```
 def NAME "(" [NAME ("," NAME)*] ")" "=" expr
@@ -729,7 +729,7 @@ A `def` binds a **non-recursive expression macro**. It is not a runtime function
 6. **Static-argument propagation (I3).** A parameter that flows into a window/quantile position must receive a numeric literal at the call site, so the inlined expression still has static windows.
 7. **Definition sites.** `def`s are top-level declarations valid in a model file or a library file; they are removed from the program once inlined. The bundled standard library and user libraries are `.trail` files of `def`s brought in by `import` (§8.1).
 
-Because the derived layer is expressible this way, most of the function catalog — financial ratios, `beta`/`yoy`/`avg2`, hyperbolics, `sigmoid`/`signed_log`, finite-difference calculus, robust/rolling statistics, published factors — is Trail source in the standard library rather than engine code; the engine carries only the primitives (§7) and registered functions (§7.6). The bundled library ships as `stdlib/{math,stats,transform,calculus,geometry,factor,timeseries,core}.trail` and is **implicitly loaded** by the pipeline (the CLI `--no-stdlib` opts out); `docs/function-catalog.md` classifies the full surface (primitive / derived / registered). The `timeseries` module holds the derived operators migrated out of the engine (`yoy`, `avg2`, `cagr`, `beta`, `pctile`, …); `factor` holds the cross-sectional factor toolkit (`ntile`, `scale`, `neutralize`, `xs_corr`, …). Discovery (§1.3) tags each function `primitive` or `derived`.
+Because the derived layer is expressible this way, most of the function catalog - financial ratios, `beta`/`yoy`/`avg2`, hyperbolics, `sigmoid`/`signed_log`, finite-difference calculus, robust/rolling statistics, published factors - is Trail source in the standard library rather than engine code; the engine carries only the primitives (§7) and registered functions (§7.6). The bundled library ships as `stdlib/{math,stats,transform,calculus,geometry,factor,timeseries,core}.trail` and is **implicitly loaded** by the pipeline (the CLI `--no-stdlib` opts out); `docs/function-catalog.md` classifies the full surface (primitive / derived / registered). The `timeseries` module holds the derived operators migrated out of the engine (`yoy`, `avg2`, `cagr`, `beta`, `pctile`, …); `factor` holds the cross-sectional factor toolkit (`ntile`, `scale`, `neutralize`, `xs_corr`, …). Discovery (§1.3) tags each function `primitive` or `derived`.
 
 ---
 
@@ -744,14 +744,14 @@ Validators MUST report at minimum the following. Errors block compilation; warni
 | `E-FUNC-ARITY` | error | 1 | wrong positional argument count | `lag(x)` |
 | `E-NAME-UNDEFINED` | error | 1 | name used before assignment in its model | `a = b + 1` with no `b` |
 | `E-NAME-REBOUND` | error | 1 | name reused within a model, or duplicate top-level declaration | two `model quality` decls |
-| `E-SCORE-LITERAL` | error (parse) | 1 | score case/else value not a numeric literal — rejected by the grammar (surfaces as a syntax error) | `x if c else 0` in a score block |
+| `E-SCORE-LITERAL` | error (parse) | 1 | score case/else value not a numeric literal - rejected by the grammar (surfaces as a syntax error) | `x if c else 0` in a score block |
 | `E-FWD-CONTEXT` | error | 1 | `fwd_return` outside `learn.target` | `a = fwd_return(12m)` |
 | `E-UNIVERSE-UNKNOWN` | error | 1 | `on` names an undeclared universe (or omitted with ≠1 universe) | `model m on nowhere` |
 | `E-SOURCE-UNKNOWN` | error | 1 (config) / 2 (pins) | pin or precedence names an undeclared source | `x @ nosuch` |
 | `E-PIN-UNSUPPORTED` | error | 1 only | any source pin before phase 2 | `x @ fmp` |
 | `E-IMPORT-CYCLE` | error | 2 | import cycle | a imports b imports a |
 | `E-FUNC-RECURSION` | error | 1 | a `def` calls itself directly or transitively | `def f(x) = f(x)` |
-| `E-FUNC-DUP` | error | 1 | two `def`s share a name | — |
+| `E-FUNC-DUP` | error | 1 | two `def`s share a name | - |
 | `W-MEDIAN-DEFERRED` | warning | 1 only | `on_missing median` (treated `skip`) | |
 | `W-KIND-STOCK-FLOW` | warning | 1 | bare `stock`/`flow` division without `avg2`/`lag` | `income.cogs / balance.inventory` |
 
@@ -761,7 +761,7 @@ Reserved for future standardization: `E-TYPE-ORDER` (ordered comparison on strin
 
 ## 10. Runtime configuration (`trail.yaml`)
 
-The CLI binds programs to data through a YAML file. Resolution order: `--config PATH` flag → `./trail.yaml` → built-in default (bundled fixture source). A missing config file is **not** an error — `trail run` works out of the box and in CI.
+The CLI binds programs to data through a YAML file. Resolution order: `--config PATH` flag → `./trail.yaml` → built-in default (bundled fixture source). A missing config file is **not** an error - `trail run` works out of the box and in CI.
 
 ### 10.1 Schema
 
@@ -777,7 +777,7 @@ sources:                         # name -> driver binding; keys are the language
     driver: trail.sources.aiofmp_cache      # phase 2
     options:
       cache_path: ~/aiofmp-cache
-      api_key_env: FMP_API_KEY              # env var NAME — never the secret itself
+      api_key_env: FMP_API_KEY              # env var NAME - never the secret itself
   edgar:
     driver: trail.sources.edgar             # phase 2
     options:
@@ -794,7 +794,7 @@ precedence:                      # namespace -> ordered source names (per-cell f
 1. **Driver contract.** A driver is a dotted import path to a factory: `factory(options: dict) -> source` where `source.load(fields: set[str]) -> panel` returns the long-format panel (§4.1) for the requested schema columns. Unknown driver paths are a startup configuration error, not a query-time error.
 2. **Precedence.** `precedence.default` is required (inferred as "all declared sources, declaration order" only when `precedence` is entirely absent). Namespace keys override `default`. Every source named in any chain MUST exist under `sources` (`E-SOURCE-UNKNOWN`). Phase 1 supports exactly one effective source (the first of `default`); per-cell multi-source coalescing is phase 2.
 3. **Secrets** are referenced by environment-variable name (`api_key_env`); configurations containing literal secrets SHOULD be rejected by tooling.
-4. **Pins ↔ config.** `@ name` in programs resolves against `sources` keys — configuration is what gives pin names meaning. Dependency extraction (I3) reports pinned fields per source so the runtime can prefetch exactly what a program needs.
+4. **Pins ↔ config.** `@ name` in programs resolves against `sources` keys - configuration is what gives pin names meaning. Dependency extraction (I3) reports pinned fields per source so the runtime can prefetch exactly what a program needs.
 5. **`panel.periods`** bounds the period axis after loading; it does not change PIT semantics.
 6. `trail validate` is config-free (pure static analysis); only `trail run`/`backtest` read the config.
 
@@ -820,7 +820,7 @@ The validator treats registered names exactly like built-ins (arity, kind lints,
 ```lark
 // file grammar (model files, agent-authored artifacts)
 start: decl+
-// interactive dialect (REPL / notebooks); a strict superset — meta-command, decl, or bare expr
+// interactive dialect (REPL / notebooks); a strict superset - meta-command, decl, or bare expr
 repl_line: meta_command | decl | expr
 meta_command: "?"            -> meta_catalog
             | "?" dotted     -> meta_describe   // ?income, ?income.revenue, ?cagr, ?functions, ...
@@ -890,7 +890,7 @@ Implementations MUST parse with a deterministic algorithm (LALR(1) or equivalent
 
 ---
 
-## Appendix A — Reserved words
+## Appendix A - Reserved words
 
 See §3.2. Machine-readable list:
 
@@ -902,11 +902,11 @@ skip strategy tbills to top true universe validate value weight weighting
 weights where zero
 ```
 
-## Appendix B — Deferred-construct behavior by phase
+## Appendix B - Deferred-construct behavior by phase
 
 Phase-1 implementations MUST behave as follows: source pins → `E-PIN-UNSUPPORTED`; `sply`/`ttm`/`roll_tail_mean`/registered names → `E-FUNC-UNKNOWN`; `on_missing median` → `W-MEDIAN-DEFERRED` (treated `skip`); cross-model export references → `E-FIELD-UNKNOWN`; `import`/`strategy`/`backtest`/`learn` → parsed; attempting to *execute* them exits with a clear phase error.
 
-## Appendix C — Complete annotated example
+## Appendix C - Complete annotated example
 
 ```trail
 # ---------- universes ----------
