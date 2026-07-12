@@ -748,6 +748,9 @@ Validators MUST report at minimum the following. Errors block compilation; warni
 | `E-FWD-CONTEXT` | error | 1 | `fwd_return` outside `learn.target` | `a = fwd_return(12m)` |
 | `E-UNIVERSE-UNKNOWN` | error | 1 | `on` names an undeclared universe (or omitted with ≠1 universe) | `model m on nowhere` |
 | `E-SOURCE-UNKNOWN` | error | 1 (config) / 2 (pins) | pin or precedence names an undeclared source | `x @ nosuch` |
+| `E-SOURCE-DRIVER` | error | 1 (config) | driver is neither a registered `trail.sources` entry point nor a resolvable dotted path | `driver: nosuch` |
+| `E-SOURCE-PANEL` | error | 1 | source panel lacks `security`/`period`, or (under `panel.strict`) any contract deviation | |
+| `W-SOURCE-PANEL` | warning | 1 | non-strict: source panel deviated from the contract and was coerced | |
 | `E-PIN-UNSUPPORTED` | error | 1 only | any source pin before phase 2 | `x @ fmp` |
 | `E-IMPORT-CYCLE` | error | 2 | import cycle | a imports b imports a |
 | `E-FUNC-RECURSION` | error | 1 | a `def` calls itself directly or transitively | `def f(x) = f(x)` |
@@ -770,19 +773,21 @@ The CLI binds programs to data through a YAML file. Resolution order: `--config 
 # trail.yaml
 panel:
   periods: [2015, 2025]          # optional inclusive fiscal-year bounds
+  strict: false                  # true = a non-conforming source panel is a hard error
 
 sources:                         # name -> driver binding; keys are the language-visible
   fixture:                       # source names used by '@' pins
-    driver: trail.sources.fixture
+    driver: fixture              # a registered trail.sources name, or a dotted path
   fmp:
     driver: trail.sources.aiofmp_cache      # phase 2
     options:
       cache_path: ~/aiofmp-cache
       api_key_env: FMP_API_KEY              # env var NAME - never the secret itself
   edgar:
-    driver: trail.sources.edgar             # phase 2
+    driver: edgar                           # registered by `pip install trail-edgar`
     options:
-      user_agent: "name contact@example.com"
+      identity: "name contact@example.com"  # SEC fair-access User-Agent
+      tickers: [AAPL, MSFT]
 
 precedence:                      # namespace -> ordered source names (per-cell first-non-null)
   default: [fmp]
@@ -792,9 +797,10 @@ precedence:                      # namespace -> ordered source names (per-cell f
 
 ### 10.2 Normative rules
 
-1. **Driver contract.** A driver is a dotted import path to a factory: `factory(options: dict) -> source` where `source.load(fields: set[str]) -> panel` returns the long-format panel (§4.1) for the requested schema columns. Unknown driver paths are a startup configuration error, not a query-time error.
+1. **Driver contract.** A driver resolves to a `factory(options: dict) -> DataSource`, either by a registered name (Python entry-point group `trail.sources`, so `pip install trail-<name>` exposes `driver: <name>`) or by a dotted import path; registered names take precedence. A `DataSource` implements one required method, `load(fields: set[str], *, periods=None) -> panel`, returning the long-format panel (§4.1) for the requested schema columns. It MAY also implement the extended-tier capabilities - field discovery, universe enumeration, and a capabilities descriptor - which `trail catalog` and (phase 2) multi-source routing use when present. An unresolvable driver is a startup configuration error (`E-SOURCE-DRIVER`), not a query-time error.
 2. **Precedence.** `precedence.default` is required (inferred as "all declared sources, declaration order" only when `precedence` is entirely absent). Namespace keys override `default`. Every source named in any chain MUST exist under `sources` (`E-SOURCE-UNKNOWN`). Phase 1 supports exactly one effective source (the first of `default`); per-cell multi-source coalescing is phase 2.
 3. **Secrets** are referenced by environment-variable name (`api_key_env`); configurations containing literal secrets SHOULD be rejected by tooling.
+4. **Panel conformance.** A returned panel MUST carry `security` and `period` columns; their absence is always `E-SOURCE-PANEL` (nothing can be coerced). Other deviations - a missing requested field, a non-integer `period`, or a column outside the schema - are `E-SOURCE-PANEL` under `panel.strict: true`, otherwise `W-SOURCE-PANEL` with coercion: columns outside the schema are dropped, `period` is cast to an integer, and missing requested fields are added as all-null columns. `panel.strict` defaults to `false`; production configurations SHOULD set it `true`.
 4. **Pins ↔ config.** `@ name` in programs resolves against `sources` keys - configuration is what gives pin names meaning. Dependency extraction (I3) reports pinned fields per source so the runtime can prefetch exactly what a program needs.
 5. **`panel.periods`** bounds the period axis after loading; it does not change PIT semantics.
 6. `trail validate` is config-free (pure static analysis); only `trail run`/`backtest` read the config.
