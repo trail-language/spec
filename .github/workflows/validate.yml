@@ -1,0 +1,21 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  stdlib:
+    name: validate standard library
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install reference implementation
+        run: pip install "trail-lang @ git+https://github.com/trail-language/trail-py.git"
+      - name: Validate stdlib against the reference implementation
+        run: python scripts/validate_stdlib.py
