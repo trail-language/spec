@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # create the GitHub release
+
+jobs:
+  release:
+    name: publish spec tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build spec tarball
+        run: |
+          pkg="trail-spec-${GITHUB_REF_NAME}"
+          mkdir -p "$pkg"
+          cp -r grammar stdlib reference.md function-catalog.md VERSIONING.md README.md LICENSE "$pkg/"
+          tar -czf "${pkg}.tar.gz" "$pkg"
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${GITHUB_REF_NAME}"
+          "trail-spec-${GITHUB_REF_NAME}.tar.gz"
+          --repo "${GITHUB_REPOSITORY}"
+          --title "${GITHUB_REF_NAME}"
+          --generate-notes
