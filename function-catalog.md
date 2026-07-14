@@ -76,7 +76,7 @@ Everything marked **D** below is implemented and tested (`tests/test_stdlib.py` 
 | `ntile(x,k)`, `neutralize(x,f)` | D | quantile bucketing, single-factor residual (stdlib/factor.trail) |
 | `rank_gauss` | R | rank→normal (needs probit) |
 
-## 6. Statistics - time-series (per security, trailing window)
+## 6. Statistics - time-series (per entity, trailing window)
 
 | Function | Tier | Definition |
 |---|---|---|
@@ -109,7 +109,7 @@ Everything marked **D** below is implemented and tested (`tests/test_stdlib.py` 
 | `hypot(a,b)` | D | `sqrt(a*a+b*b)` |
 | `dist2`, `manhattan` | D | pairwise Euclidean / L1 distance |
 | angles, rotations | P | need trig primitives (sin/cos/atan2) |
-| vector norms across securities | R | cross-entity / matrix shape |
+| vector norms across entities | R | cross-entity / matrix shape |
 
 ## 9. Transformations & feature encodings
 
@@ -138,6 +138,29 @@ Multivariate/OLS regression & residuals (IVOL, neutralization), covariance/corre
 **matrices**, PCA/eigen-portfolios, Kalman/HP filters, GARCH, STL decomposition, Box-Cox
 with fitted λ, IRR/YTM root-finding, optimizers. Each is vectorizable *internally* but is
 neither a primitive nor a composition - the Python escape hatch (`§7.6`).
+
+## 12. Frequency alignment & aggregation (reference §4.4, §7.7)
+
+Transforms that move a field between native and target frequencies. An aggregation reduces a
+downsample bucket (a list of values); `kind` supplies the default, any library reduction overrides it.
+
+| Function | Tier | Definition |
+|---|---|---|
+| `resample(x, freq, agg)` | P | re-bucket to `freq`, reduce each bucket by `agg` (downsample) |
+| `to_annual/quarterly/monthly/daily(x)` | D | `resample` to that frequency, `agg` = kind default |
+| `asof(x)` | P | upsample: carry the last known value forward (backward as-of join) |
+| `ttm(x)`, `trailing(x, w)` | D | trailing-window transform, kind-aware (flow sum, stock last) |
+| `sply(x)` | D | same period last year |
+| `roll_*(x, "1y")` | P | duration-string windows on the rolling reducers |
+
+Aggregation library (the `agg` argument; also a reduction over any bucket):
+
+| Group | Reductions |
+|---|---|
+| basic | `sum`, `mean`, `last`, `first`, `min`, `max`, `count` |
+| distribution | `median`, `std`, `var`, `skew`, `kurtosis`, `quantile(q)`, `range` |
+| multiplicative | `prod`, `compound` (`prod(1+x)-1`), `geomean` |
+| change | `change` (last-first) |
 
 ---
 
