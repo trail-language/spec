@@ -30,7 +30,7 @@ import_decl   ::= "import" STRING
 func_def      ::= "def" NAME "(" ( NAME ( "," NAME )* )? ")" "=" expression
 universe_decl ::= "universe" NAME "=" dotted ( "where" expression )?
 
-model_decl    ::= "model" NAME ( "on" NAME )? ( "period" PERIOD )? "{" model_stmt+ "}"
+model_decl    ::= "model" NAME ( "on" NAME )? ( "at" FREQ )? "{" model_stmt+ "}"
 model_stmt    ::= "desc" STRING
                 | "on_missing" POLICY
                 | "export" NAME "=" expression
@@ -38,12 +38,12 @@ model_stmt    ::= "desc" STRING
                 | NAME "=" expression
 score_case    ::= NUMBER "if" expression
 
-signal_decl   ::= "signal" NAME ( "on" NAME )? ( "period" PERIOD )? "=" expression
+signal_decl   ::= "signal" NAME ( "on" NAME )? ( "at" FREQ )? "=" expression
 
 strategy_decl ::= "strategy" NAME "{" strat_field+ "}"
 strat_field   ::= "universe" NAME
                 | "signal" expression
-                | "rebalance" PERIOD
+                | "rebalance" FREQ
                 | "select" "top" NUMBER ( "where" expression )?
                 | "weighting" WEIGHTING
                 | "hold_band" NUMBER ".." NUMBER
@@ -86,7 +86,7 @@ literal       ::= NUMBER | STRING | "true" | "false"
 (* ----- terminals ----- *)
 
 CMP_OP        ::= "==" | "!=" | ">=" | "<=" | ">" | "<"
-PERIOD        ::= "annual" | "quarterly" | "monthly" | "daily"
+FREQ          ::= "annual" | "quarterly" | "monthly" | "weekly" | "daily" | "hourly" | "minute"
 POLICY        ::= "skip" | "zero" | "median"
 WEIGHTING     ::= "equal" | "value" | "signal"
 NUMBER        ::= /[0-9][0-9_]*(\.[0-9]+)?([eE][+-]?[0-9]+)?/
