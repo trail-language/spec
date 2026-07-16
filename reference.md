@@ -268,6 +268,18 @@ model b on tech at annual { export z = zscore(income.revenue) }  # z vs tech onl
 
 Universe membership is itself point-in-time: a entity delisted in 2019 is a member for periods before 2019 and absent after. Survivorship-free membership is an engine guarantee, not an author obligation.
 
+### 4.7 Cross-entity reference (entity pins)
+
+A field reference may pin a specific **entity** whose series to read, with the selector `@ entity("<id>")`:
+
+```trail
+export excess = price.return - price.return @ entity("SPY")
+```
+
+The engine takes that entity's series for the field, aligns it onto the block's target grid by time alone - backward as-of, point-in-time-safe, aggregated by the field's `kind` exactly as in §4.4 - and broadcasts it across every entity, so it meets each cell as a constant-over-entities series. An entity pin is the language-level selector for the broadcast mechanism of §5.4: it names a specific entity's rows where a `*`-keyed broadcast source names the global series; both replicate onto the grid identically.
+
+The pin is **generic**: any field, at any frequency qualifier (`daily.price.adj_close @ entity("SPY")`, `annual.gmd.infl @ entity("USA")`), for any entity in any dimension - a stock, an index, a country - that the configured sources can serve. The `"<id>"` is a **canonical entity id** (§5.4), never a provider symbol; the referenced entity is added to the fetch scope even when it lies outside the model's universe. Like source pins (§5.2), an entity pin applies only to a schema field reference and binds tighter than every binary operator; it does not combine with a source pin in one clause. A pin whose entity has no rows after fetch is **`E-ENTITY-UNKNOWN`**; carrying a `flow`/`return`/`per_share` field onto a finer grid emits `W-UPSAMPLE-FLOW` (§4.4); a block referencing only pinned fields has no grid to broadcast onto (`E-NO-ENTITY`).
+
 ---
 
 ## 5. Source resolution
@@ -298,6 +310,8 @@ rev_gap = abs(income.revenue @ fmp - income.revenue @ edgar)
 ```
 
 `(a + b) @ fmp` is a syntax error - pin the fields, not the arithmetic.
+
+To read a specific *entity's* series rather than a specific source's, use the entity pin `@ entity("<id>")` (§4.7).
 
 ### 5.3 Source names
 
@@ -805,6 +819,7 @@ Validators MUST report at minimum the following. Errors block compilation; warni
 | `W-UPSAMPLE-FLOW` | warning | 1 | a `flow`/`return` field upsampled by as-of (repeating a total mis-scales it; resample explicitly) | `income.revenue` at `daily` |
 | `W-SOURCE-PANEL` | warning | 1 | non-strict: source panel deviated from the contract and was coerced | |
 | `E-PIN-UNSUPPORTED` | error | 1 only | any source pin before phase 2 | `x @ fmp` |
+| `E-ENTITY-UNKNOWN` | error | 1 | an entity pin references an entity with no rows after fetch (§4.7) | `x @ entity("NOSUCH")` |
 | `E-IMPORT-CYCLE` | error | 2 | import cycle | a imports b imports a |
 | `E-FUNC-RECURSION` | error | 1 | a `def` calls itself directly or transitively | `def f(x) = f(x)` |
 | `E-FUNC-DUP` | error | 1 | two `def`s share a name | - |
