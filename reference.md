@@ -234,7 +234,7 @@ The `agg` in `resample`/`to_*` is any reduction from the **aggregation library**
 # daily stock return vs annual country rate: the annual rate (kind=rate) as-of-broadcasts onto each day
 model carry at daily {
   export excess = price.return - macro.risk_free
-  export ann_vol = resample(price.return, annual, std)   # explicit: realized annual volatility
+  export ann_vol = resample(price.return, "annual", "std")   # explicit: realized annual volatility
 }
 
 # trailing-twelve-months from 10-Q flows (kind-aware)
@@ -554,7 +554,7 @@ The **aggregation library** supplies the `agg` argument (the reduction applied t
 | multiplicative | `prod`, `compound` (`prod(1+x)-1`), `geomean` |
 | change | `change` (last-first) |
 
-`kind` selects the default; any library reduction overrides it - e.g. `resample(price.adj_close, monthly, max)` for a monthly high, `resample(price.return, annual, std)` for realized annual volatility. New reductions are named aggregations, not new syntax.
+`kind` selects the default; any library reduction overrides it - e.g. `resample(price.adj_close, "monthly", "max")` for a monthly high, `resample(price.return, "annual", "std")` for realized annual volatility. New reductions are named aggregations, not new syntax.
 
 ---
 
