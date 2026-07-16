@@ -307,6 +307,8 @@ Panels from different sources align on a **canonical entity identity** (mapped p
 
 **Broadcast (global) series.** A value with no entity axis - a market-wide risk-free rate, a single macro series - is delivered by a source as a panel keyed by the reserved entity `*`. The engine replicates it across every entity on the target grid by time alignment alone (the value in effect at each instant), so `price.return - macro.risk_free` is well defined for every stock. A broadcast series contributes no rows of its own to the grid, and the language sees an ordinary field; the `*` sentinel is a data-plane convention, not a symbol the author writes.
 
+**Foreign-dimension (coarser-entity) series.** A source may be keyed by a coarser entity **dimension** than the model's entities - a macro source keyed by ISO3 country, meeting a per-stock panel. The source declares its dimension (e.g. `country`); the engine maps each entity to that dimension's key through a bridge field the entity's own provider supplies (`meta.country`), then carries the coarser row onto the entity, time-aligned as-of. So `income.net_income / gmd.gdp` is each stock's earnings over its country's GDP. The stock->country map is a per-`(entity, time)` fact owned by the data plane (a company can redomicile); the author writes only canonical fields. With no entity-bearing source present, the coarse dimension is itself the entity axis (a country-level model). Broadcast is the degenerate one-member case of this mechanism.
+
 ---
 
 ## 6. Expressions
