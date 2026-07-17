@@ -48,10 +48,14 @@ See [`function-catalog.md`](function-catalog.md) for the full classification.
 
 ## Status
 
-Phase 1 (language core) is normative: expressions, `universe` / `model` / `score` / `signal`,
-user-defined functions, the standard library, and runtime configuration. `strategy` /
-`backtest` / `learn` and source pinning parse but are specified for later phases (see the
-conformance table in [`reference.md`](reference.md)).
+**Version 1.0.0.** The 1.0 core is normative and executes: expressions and built-ins,
+`universe` / `model` / `score` / `signal`, user-defined functions, the standard library,
+multi-source resolution with per-cell coalescing and the `@` field-reference qualifiers
+(`@ source` / `@ entity` / `@ align`), point-in-time cross-frequency alignment, the temporal
+operators, the data-source contract, and runtime configuration. `strategy` / `backtest` /
+`learn` execution, `import` inclusion, the `@ asof` / `@ params` qualifiers, and registered
+functions parse-or-are-reserved as post-1.0 extension points (see §1.2 and Appendix B in
+[`reference.md`](reference.md)).
 
 ## License
 

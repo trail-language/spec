@@ -150,7 +150,7 @@ downsample bucket (a list of values); `kind` supplies the default, any library r
 | `to_annual/quarterly/monthly/daily(x)` | D | `resample` to that frequency, `agg` = kind default |
 | `asof(x)` | P | upsample: carry the last known value forward (backward as-of join) |
 | `ttm(x)`, `trailing(x, w)` | D | trailing-window transform, kind-aware (flow sum, stock last) |
-| `sply(x)` | R (phase 2 - not yet implemented) | same period last year |
+| `sply(x)` | D (post-1.0 - not yet implemented) | same period last year |
 | `roll_*(x, "1y")` | P | duration-string windows on the rolling reducers |
 
 Aggregation library (the `agg` argument; also a reduction over any bucket):
@@ -162,14 +162,26 @@ Aggregation library (the `agg` argument; also a reduction over any bucket):
 | multiplicative | `prod`, `compound` (`prod(1+x)-1`), `geomean` |
 | change | `change` (last-first) |
 
+## 13. Temporal (calendar) operators (reference §7.3)
+
+Primitives over a datetime value (`time`, an `@ align` date column, or any datetime field).
+They double as general calendar factors and as the reduction inside an alignment-coordinate override.
+
+| Function | Tier | Definition |
+|---|---|---|
+| `year(t)`, `month(t)`, `quarter(t)`, `day(t)` | P | calendar-component extraction |
+| `truncate(t, "1y"\|"1mo"\|…)` | P | truncate a datetime to a duration bucket |
+| `datediff(a, b [, unit])` | P | whole units between two datetimes (`days`\|`hours`\|`minutes`\|`seconds`, default `days`) |
+
 ---
 
 ## The lesson
 
 Of the standard-function surface, the overwhelming majority is **derived** - pure composition
-of a small primitive core (56 primitives: shift, the rolling and cross-sectional reducers,
-scalar `sqrt/log/exp`, trig, rounding, and the cumulative ops). The 78 functions in
-`stdlib/*.trail` are all Trail source. Only genuine transcendentals (trig), irreducible
+of a small primitive core (the engine `OPS`: shift, the rolling and cross-sectional reducers,
+scalar `sqrt/log/exp`, trig, rounding, the cumulative ops, the frequency transforms, and the
+temporal/calendar extractors). The stdlib functions in `stdlib/*.trail` are all Trail source.
+Only genuine transcendentals (trig), irreducible
 reductions (windows, cross-sections), and matrix/iterative methods need engine code. That is
 the payoff of the primitive/derived split: the language and its engine stay tiny; the library
 grows in Trail.

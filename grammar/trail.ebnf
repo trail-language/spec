@@ -75,7 +75,10 @@ sum           ::= product ( ( "+" | "-" ) product )*
 product       ::= power ( ( "*" | "/" | "%" ) power )*
 power         ::= unary ( "^" power )?                (* right-associative *)
 unary         ::= "-" unary | pinned
-pinned        ::= atom ( "@" NAME )?                  (* source pin *)
+pinned        ::= atom ( "@" NAME ( "(" expression ")" )? )?
+                                                     (* @ field qualifier: source pin (bare NAME),
+                                                        or selector entity("id") / align(expr);
+                                                        at most one per field reference *)
 atom          ::= call | reference | literal | "(" expression ")"
 call          ::= NAME "(" ( argument ( "," argument )* )? ")" ( "by" dotted )?
 argument      ::= NAME "=" expression | expression

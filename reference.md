@@ -1,7 +1,7 @@
 # The Trail Language Reference
 
-**Version:** 0.3-draft · 2026-07-15
-**Status:** Normative for phase 1 (language core); phase 2+ constructs are marked with *(phase N)*. The data model is `(entity x time@frequency)`; cross-frequency alignment (§4.4) is specified here and lands in the reference implementation in phases.
+**Version:** 1.0.0 · 2026-07-18
+**Status:** Normative. The 1.0 core is implemented and executes: expressions and built-ins (§7), user functions (`def`, §8.8), `universe`/`model`/`score`/`signal`, multi-source resolution with per-cell coalescing and the `@` field-reference qualifiers (§5, §6.3), point-in-time cross-frequency alignment (§4.4-§4.5), the temporal/calendar operators (§7.3), runtime configuration (§10), the data-source contract (§11), and the interactive dialect and discovery meta-commands (§1.3). Constructs that parse but whose *execution* is a post-1.0 extension point are labelled *(post-1.0)*: `strategy`/`backtest`/`learn` execution, `import` inclusion, cross-model export references, registered functions (§7.6, §11.5), the `@ asof`/`@ params` qualifiers, and provider vocabularies such as `bank.*` (§10.2, Appendix B). The data model is `(entity x time@frequency)`.
 
 This document is the authoritative specification of the Trail language: its lexical structure, data model, expression semantics, built-in functions, declarations, diagnostics, and runtime configuration.
 
@@ -43,16 +43,16 @@ Every conforming implementation MUST preserve:
 
 These invariants are what make Trail safe for agent authorship: a program that parses and validates is guaranteed to terminate, to have known data needs, and to be incapable of look-ahead bias.
 
-### 1.2 Conformance phases
+### 1.2 What 1.0 executes, and what is deferred
 
-| Phase | Constructs |
+The 1.0 core is a complete, executing language. Everything below is normative and implemented unless explicitly marked *(post-1.0)*.
+
+| Status | Constructs |
 |---|---|
-| 1 (normative here) | expressions, built-ins (§7 except items marked deferred), user-defined functions (`def`, §8.8), `universe`, `model`, `score`, `signal`, runtime config (§10), the interactive dialect and discovery meta-commands (§1.3); `strategy`/`backtest`/`learn`/`import` parse without execution |
-| 2 | `import` inclusion, source pinning `@`, multi-source resolution, cross-model export references, `quarterly`/`monthly` contexts, `sply`, `ttm`, `roll_tail_mean`, `on_missing median`, registered functions |
-| 3 | `strategy`/`backtest` execution (gates, fallback sleeves, exposure) |
-| 4 | `learn` execution, weight tables |
+| **1.0 (normative, executes)** | expressions and built-ins (§7); user-defined functions (`def`, §8.8); `universe`, `model`, `score`, `signal`; the frequency ladder and cross-frequency alignment at every context (`annual`/`quarterly`/`monthly`/…, §4.4); the point-in-time known-date model (§4.5); multi-source resolution - precedence chains, per-cell coalescing, and the `@ source` / `@ entity` / `@ align` field-reference qualifiers (§5, §6.3); the temporal/calendar operators (§7.3); `ttm`/`trailing`/`to_*`/`resample`/`asof` frequency transforms (§7.7); runtime config (§10); the data-source contract (§11); the interactive dialect and discovery meta-commands (§1.3); `strategy`/`backtest`/`learn`/`import` **parse** without execution |
+| **post-1.0 (extension point)** | `strategy`/`backtest` execution (gates, fallback sleeves, exposure); `learn` execution and weight tables; `import` textual inclusion; cross-model export references (`MODEL.export`); registered functions (§7.6, §11.5); the `@ asof` and `@ params(...)` qualifiers and provider vocabularies such as `bank.*` (§10.2, Appendix B); `sply`, `roll_tail_mean`; execution semantics of `on_missing median` (parses; treated as `skip`, `W-MEDIAN-DEFERRED`) |
 
-A phase-1 implementation MUST reject constructs it cannot execute using the diagnostics of §9 - never by silently ignoring them.
+An implementation MUST reject a construct it cannot execute using the diagnostics of §9 - never by silently ignoring it. Attempting to *execute* a parse-only construct raises `E-PHASE-DEFERRED`; a call to an unimplemented function name is `E-FUNC-UNKNOWN`.
 
 ### 1.3 Two dialects: model files and the interactive REPL
 
@@ -76,7 +76,7 @@ This split is deliberate: discovery is an authoring-time question ("what *can* I
 
 The resolver disambiguates a single `?<name>` by lookup order: exact field path → namespace → function → source → the `fields`/`functions`/`sources` category words → "unknown".
 
-**Discovery front-ends.** The catalog engine is a single core; meta-commands are one front-end onto it. The same core backs the `trail catalog [target]` CLI command (phase 1), and - as they land - an MCP discovery tool and Jupyter line/cell magics (`%trail`, `%%trail`). Field availability is reported from the schema in phase 1; once real source drivers exist (phase 2) discovery additionally reports **per-source** resolution, which doubles as the source coverage probe.
+**Discovery front-ends.** The catalog engine is a single core; meta-commands are one front-end onto it. The same core backs the `trail catalog [target]` CLI command, and - as they land - an MCP discovery tool and Jupyter line/cell magics (`%trail`, `%%trail`). Because discovery is mandatory in the source contract (§11), a configured source additionally reports **per-source** resolution, which doubles as the source coverage probe.
 
 Discovery reads only the registries (schema, built-in functions, configured sources) and never executes a program, so it is always safe and side-effect-free.
 
@@ -90,7 +90,7 @@ Grammar excerpts use Lark notation: `"literal"` terminals, `UPPER` token names, 
 - **Cell** - one `(entity, time)` position.
 - **Broadcast series** - a panel whose value is constant across the entity axis (index levels, macro rates, universe aggregates).
 - **Group** - the set of cells a cross-sectional operator computes within: `(time × universe)`, optionally refined by a `by` field.
-- **PIT date** - the first calendar date at which a cell's value was knowable (filing date plus configured lag).
+- **Known-date coordinate** - the instant a cell's value became knowable (a filing or trade date); the coordinate alignment places the value by, distinct from its period-end `time` (§4.5).
 
 ---
 
@@ -112,7 +112,7 @@ Comments are not tokens; implementations MAY preserve them for formatting tools.
 | Token | Pattern | Valid examples | Invalid examples |
 |---|---|---|---|
 | NUMBER | `/[0-9][0-9_]*(\.[0-9]+)?([eE][+-]?[0-9]+)?/` | `0`, `2.5`, `200e6`, `1_000_000`, `4.5e-2` | `-3` (unary minus is an operator), `.5` (leading digit required), `1.` (trailing digit required) |
-| STRING | `/"[^"]*"/` | `"NYSE"`, `"Total Debt"` | `'NYSE'` (single quotes), escapes (none in v0.2) |
+| STRING | `/"[^"]*"/` | `"NYSE"`, `"Total Debt"` | `'NYSE'` (single quotes), escapes (none) |
 | Boolean | `true` \| `false` | `true` | `True`, `TRUE` |
 | NAME | `/[a-zA-Z_][a-zA-Z0-9_]*/`, excluding reserved words | `roa`, `fcf_per_share`, `_tmp` | `3yr_avg` (leading digit), `weight` (reserved) |
 | DATE | `/\d{4}-\d{2}(-\d{2})?/` | `2010-01`, `2025-12-31` | `2010/01` |
@@ -246,9 +246,33 @@ model ttm at quarterly {
 }
 ```
 
-**Point-in-time.** Because `time` is the **period-end** instant and upsampling is a **backward** as-of join, a value is visible only from the moment it is known - alignment is lookahead-safe by construction. Company AAA files FY2023 on 2024-02-15 with `pit_lag 45d`, so its FY2023 cell is knowable as of 2024-03-31; `price.adj_close / income.eps_diluted` at daily target uses each day's close against the most recent *known* EPS, and next year's actual EPS is inexpressible. This alignment is engine-enforced and cannot be written incorrectly.
+**Point-in-time.** `time` is the **period-end** instant (the label of the period a value describes), but a field may also carry a separate **known-date coordinate** - when the value became knowable (a filing or trade date). Alignment places each value by its coordinate, not by its period-end, so a value is visible only from the moment it is known and next year's actual figure is inexpressible. `price.adj_close / income.eps_diluted` at a daily target uses each day's close against the most recent *known* EPS. This placement is engine-enforced and cannot be written incorrectly; the full model - coordinates, row-shift, and the `panel.pit` switch - is §4.5.
 
-### 4.5 Point-in-time invariant
+### 4.5 Point-in-time model
+
+`time` carries two roles that Trail keeps separate. As a **period-end** it is the label of the economic period a value describes (FY2023 -> 2023-12-31). As a placement, a value belongs on the grid at the moment it became **knowable**, which for filed data is later than the period-end. Trail models the second with a per-field **known-date coordinate** and places every value by it.
+
+**Known-date coordinate.** A source may emit, alongside its field columns, one or more reserved **date columns** (filing date, trade date, …; §11.3). A field declares which one is its alignment coordinate through the data-source contract (`describe_field(f).aligns_on`, §11.4). A field that declares none - and every core-only source - is **naive**: its coordinate is `time` itself, which reduces every operator to its pre-PIT behaviour exactly. Because the coordinate is *per field*, one source can serve filing-dated statements and trade-dated prices in the same panel; the engine groups fields by their resolved coordinate and aligns each group independently, so cross-source figures each land by their own date.
+
+**Placement by knowability (row-shift).** A value is placed on the target grid by the target-bucket its coordinate falls in, not the bucket its period-end falls in. Consequences, for FY2023 (period-end 2023-12-31) filed 2024-02-15:
+
+- **daily / finer grid** - visible from 2024-02-15 forward (backward as-of on the coordinate);
+- **quarterly grid** - lands in Q1-2024;
+- **annual grid - the row shifts.** The 2023-12-31 row shows the value latest *known* by end-2023 (FY2022); FY2023 moves to the annual-2024 row. It is **not** nulled in place: a coarse grid has no finer instant at which to re-reveal it, so nulling would lose it. Row-shift is the only coherent choice and is exactly what removes the systematic one-period lookahead.
+
+Under a normal filing lag the shift is **systematic**, not an edge case: in an `at annual` model every flow's row is labelled by its decision year. This is the point of PIT, not a surprise.
+
+**Downsample under PIT = fiscal-bucket + shift-label.** Downsampling a finer source to a coarser target first groups a field's rows by their **economic** period-end and reduces each bucket by `kind` (§4.4) - so a fiscal year's four quarters still sum to one figure, never split by coordinate. It then **relabels** that bucket's row to the period-end of the *latest coordinate* in the bucket (the instant the whole bucket became known). When coordinate = `time` (naive) the relabel is a no-op and the result is byte-identical to pre-PIT downsampling.
+
+**Restatements.** Row uniqueness relaxes from `(entity, period)` to `(entity, period, coordinate)`: a re-filed period is a second row at a later coordinate. The as-of path naturally reads the latest coordinate as of each instant; the downsample path pre-deduplicates keep-latest-coordinate per period, so a restatement **replaces** rather than double-counts.
+
+**Null coordinates.** A row whose known-date is missing falls back to its period-end for that row (naive placement) and the run emits **`W-PIT-PARTIAL`**.
+
+**The switch.** `panel.pit: auto` (the default) places by coordinate wherever a source supplies one; `panel.pit: naive` ignores all coordinates and places every value at its period-end (fiscal-year labels; pure fundamental analysis). A single source may also opt out with the source option `options.pit: naive` (§10.2). `Capabilities.pit` is advisory only - catalog/validate may warn that a naive source can look ahead; the engine keys off the actual date columns, never the flag.
+
+**Decision-window semantics.** Because the grid is decision-time under `panel.pit: auto`, `panel.periods: [lo, hi]` filters the **decision** calendar. A window ending 2023 therefore excludes FY2023 filed in 2024 (you could not have known it by end-2023); a user who wants that figure inside the window extends the bound or sets `panel.pit: naive`.
+
+**Invariants.**
 
 - `lag(x, n)` requires a literal `n >= 0`. There is no `lead`.
 - `fwd_return(horizon)` is grammatically an ordinary call but is legal only as the `target` of a `learn` declaration; anywhere else it is `E-FWD-CONTEXT`.
@@ -284,46 +308,52 @@ The pin is **generic**: any field, at any frequency qualifier (`daily.price.adj_
 
 ## 5. Source resolution
 
-*(Execution: phase 2. Phase-1 implementations parse pins and reject them with `E-PIN-UNSUPPORTED`.)*
+Trail decouples *what* a field means (the canonical schema) from *where* its values come from (data sources such as FMP, SEC EDGAR, stockanalysis). A source implements the **data-source contract** (§11): it declares the fields it serves (`available_fields`), describes itself (`capabilities`), and turns a request into an `(entity × time)` panel (`load`). Discovery is mandatory - a source cannot participate without saying what it provides - which is what makes the routing and coalescing below well-defined.
 
-Trail decouples *what* a field means (the canonical schema) from *where* its values come from (data sources such as FMP, SEC EDGAR, stockanalysis).
+### 5.1 Unqualified fields: namespace precedence and per-cell coalescing
 
-### 5.1 Unqualified fields
+An unqualified field (`income.revenue`) routes through the runtime **precedence configuration** (§10). Precedence maps a **namespace** - a field's *first dotted segment* (`income.revenue` -> `income`) - to an ordered chain of source names, falling back to the required `default` chain when the namespace has no entry of its own.
 
-An unqualified field (`income.revenue`) resolves through the runtime **precedence configuration** (§10): each namespace has an ordered source list; **per cell**, the first source with a non-null value wins.
+Every source in the field's chain that actually serves the field contributes, and the field **coalesces per `(entity, period)` cell**: the value is the first non-null down the chain, in chain order. A field that only one chain source serves is that source's column unchanged; a field no chain source serves is `E-FIELD-UNSERVED`.
 
-Example with `precedence: statements: [edgar, fmp]`:
+Example with `precedence: { income: [edgar, fmp], default: [fmp] }` - EDGAR covers 2015-2023, FMP covers 2015-2024:
 
 | cell | EDGAR | FMP | `income.revenue` resolves to |
 |---|---|---|---|
 | (AAA, 2023) | 121.0 | 120.8 | 121.0 (EDGAR first) |
-| (AAA, 2024) | null (not yet filed to EDGAR mapping) | 133.1 | 133.1 (falls to FMP) |
-| (BBB, 2023) | null | null | null |
+| (AAA, 2024) | null (not yet in EDGAR) | 133.1 | 133.1 (falls through to FMP) |
+| (BBB, 2023) | null | null | null (neither source has it) |
 
-### 5.2 Pinned fields
+Coalescing composes with point-in-time (§4.5): each source's cell is filled only once its own known-date makes the value visible, so an EDGAR cell still blank because the value is not yet knowable there falls through to FMP under FMP's own coordinate. Coalescing across sources of **different entity dimensions** (§5.4) is illegal - `E-COALESCE-DIM-MIXED`; pin one source or split the chain by dimension. Entity pins and dimension bridges are always first-provider, never coalesced.
 
-`income.revenue @ fmp` resolves from exactly the source named `fmp` in the configuration; cells that source lacks are null. Pins bind tighter than every binary operator and apply only to schema field references:
+### 5.2 Pinned fields (`@ source`)
+
+A **source pin** reads exactly one configured source and **skips coalescing**. It is written as a bare source name after `@`: `income.revenue @ edgar` resolves from exactly the source named `edgar`; cells that source lacks are null. Pins bind tighter than every binary operator and apply only to a schema field reference:
 
 ```trail
 rev_gap = abs(income.revenue @ fmp - income.revenue @ edgar)
         / (income.revenue @ edgar ?? income.revenue @ fmp)      # source-disagreement forensics
 ```
 
-`(a + b) @ fmp` is a syntax error - pin the fields, not the arithmetic.
+`(a + b) @ fmp` is a syntax error - pin the fields, not the arithmetic. A source pin is one of the mutually-exclusive `@` qualifiers (§6.3): a field reference carries at most one `@` qualifier, and a source pin does not combine with an entity pin. The frequency prefix composes with it (`annual.income.revenue @ edgar`).
+
+Physically, a source pin tags the field's column `#source` in the column-name codec - the same encoding a coalescing intermediate uses - so a pin and a coalesce candidate are the same aligned column; only the routing differs. `#source` is a data-plane convention, never syntax the author writes.
 
 To read a specific *entity's* series rather than a specific source's, use the entity pin `@ entity("<id>")` (§4.7).
 
 ### 5.3 Source names
 
-The names after `@` are exactly the keys of the configuration's `sources` map (§10). A pin naming an undeclared source is `E-SOURCE-UNKNOWN`.
+Source names are the keys of the configuration's `sources` map (§10). A source name is used verbatim as the `#source` column tag, so it MUST match `^[A-Za-z0-9_-]+$` (no `.`, `@`, or `#`, which are codec delimiters); a name that does not is `E-SOURCE-NAME`. A **precedence** chain naming an undeclared source is `E-SOURCE-UNKNOWN` (config load); an **`@ source` pin** naming an undeclared source is `E-PIN-SOURCE-UNKNOWN`; an `@ source` pin naming a configured source that does not actually serve the field (or not at the requested frequency) is `E-PIN-UNSERVED`.
 
 ### 5.4 Identity and alignment (engine contract)
 
-Panels from different sources align on a **canonical entity identity** (mapped per source from ticker/CIK/ISIN/FIGI) and **canonical fiscal periods**. PIT dates are tracked per `(entity, source)` - the same FY2023 figure may become knowable on different dates from different sources, and PIT alignment (§4.4) uses the resolving source's date. This identity layer is a data-plane obligation; the language never manipulates raw source symbols.
+Panels from different sources align on a **canonical entity identity** (mapped per source from ticker/CIK/ISIN/FIGI) and **canonical fiscal periods**. Known-dates are a per-field property of the resolving source (§4.5, `describe_field(f).aligns_on`), so the same FY2023 figure may become knowable on different dates from different sources and each aligns by its own coordinate. This identity layer is a data-plane obligation; the language never manipulates raw source symbols.
 
-**Broadcast (global) series.** A value with no entity axis - a market-wide risk-free rate, a single macro series - is delivered by a source as a panel keyed by the reserved entity `*`. The engine replicates it across every entity on the target grid by time alignment alone (the value in effect at each instant), so `price.return - macro.risk_free` is well defined for every stock. A broadcast series contributes no rows of its own to the grid, and the language sees an ordinary field; the `*` sentinel is a data-plane convention, not a symbol the author writes.
+**Broadcast (global) series.** A value with no entity axis - a market-wide risk-free rate, a single macro series - is delivered by a source as a panel keyed by the reserved entity `*`. The engine replicates it across every entity on the target grid by time alignment alone (the value in effect at each instant), so `price.return - macro.risk_free` is well defined for every stock. A broadcast series contributes no rows of its own to the grid, and the language sees an ordinary field; the `*` sentinel is a data-plane convention, not a symbol the author writes. A panel that mixes `*` with real entities is `E-BROADCAST-MIXED`; a model whose every source is a global broadcast has no entity axis to compute on (`E-NO-ENTITY`).
 
-**Foreign-dimension (coarser-entity) series.** A source may be keyed by a coarser entity **dimension** than the model's entities - a macro source keyed by ISO3 country, meeting a per-stock panel. The source declares its dimension (e.g. `country`); the engine maps each entity to that dimension's key through a bridge field the entity's own provider supplies (`meta.country`), then carries the coarser row onto the entity, time-aligned as-of. So `income.net_income / gmd.gdp` is each stock's earnings over its country's GDP. The stock->country map is a per-`(entity, time)` fact owned by the data plane (a company can redomicile); the author writes only canonical fields. With no entity-bearing source present, the coarse dimension is itself the entity axis (a country-level model). Broadcast is the degenerate one-member case of this mechanism.
+**Foreign-dimension (coarser-entity) series.** A source may be keyed by a coarser entity **dimension** than the model's entities - a macro source keyed by ISO3 country, meeting a per-stock panel. The remap is **source-declared, not engine-hardcoded**: the source's `capabilities` set `entity_dim` (e.g. `"country"`) and `bridge_field` - the meta field an entity-keyed source supplies that maps each entity to that dimension's key (e.g. `"meta.country"`). The engine reads `bridge_field` to map each entity to its key, then carries the coarser row onto the entity, time-aligned as-of, so `income.net_income / gmd.gdp` is each stock's earnings over its country's GDP. The stock->country map is a per-`(entity, time)` fact owned by the data plane (a company can redomicile); the author writes only canonical fields. Diagnostics: a foreign-dimension source that declares no `bridge_field` is `E-DIM-NOBRIDGE`; one configured but with no entity source supplying its bridge field is `E-DIM-UNMAPPED`; multiple foreign dimensions with no entity-bearing source is `E-DIM-AMBIGUOUS`. With a single foreign dimension and no entity-bearing source, that dimension is itself the entity axis (a country-level model). Broadcast is the degenerate one-member case of this mechanism.
+
+The full request/response shape - `LoadRequest`, the panel-out contract including the reserved `__date:*` known-date columns, `Capabilities`, and `FieldInfo` - is specified in §11.
 
 ---
 
@@ -345,23 +375,44 @@ Loosest to tightest; parenthesize to override.
 | 8 | `* / %` | left | `a + b * c` = `a + (b * c)` |
 | 9 | `^` | right | `2 ^ 3 ^ 2` = `2 ^ (3 ^ 2)` = 512 |
 | 10 | unary `-` | prefix | `-a ^ 2` = `-(a ^ 2)` … see note |
-| 11 | `@ source` | postfix | `x @ fmp ?? y` = `(x @ fmp) ?? y` |
+| 11 | `@` qualifier (`@ source`, `@ entity(…)`, `@ align(…)`) | postfix | `x @ fmp ?? y` = `(x @ fmp) ?? y` |
 | 12 | call, ref, literal, `( )` | - | |
 
-Note on unary minus and `^`: `-x ^ 2` parses as `-(x ^ 2)` (power binds tighter). Write `(-x) ^ 2` when that is meant.
+Note on unary minus and `^`: `-x ^ 2` parses as `-(x ^ 2)` (power binds tighter). Write `(-x) ^ 2` when that is meant. The `@` qualifier binds tighter than unary minus, so `-price.return @ entity("SPY")` is `-(price.return @ entity("SPY"))`.
 
 ### 6.2 Operator semantics
 
 - **Arithmetic** `+ - * / % ^` - cell-wise; null per §4.3 rules 1-3. `^` accepts real exponents (`x ^ (1/3)` is a cube root).
-- **Comparisons** - produce boolean panels. Comparing a string field to a string literal is legal (`meta.sector == "Tech"`); ordering comparisons on strings are `E-TYPE-ORDER` *(reserved; not checked in phase 1)*.
+- **Comparisons** - produce boolean panels. Comparing a string field to a string literal is legal (`meta.sector == "Tech"`); ordering comparisons on strings are `E-TYPE-ORDER` *(reserved; not checked)*.
 - **`in`** - membership against a parenthesized literal list: `meta.exchange in ("NYSE", "NASDAQ")`. The list contains literals only, not expressions.
 - **`??`** - coalesce (§4.3 rule 5).
 - **Ternary** `v if c else e` - cell-wise selection; both branches are (conceptually) evaluated everywhere, which is unobservable since expressions have no effects. Chains right-associate, giving first-match-wins reading order:
   ```trail
   size_bucket = 3 if meta.market_cap > 10e9 else 2 if meta.market_cap > 2e9 else 1
   ```
-- **Name references** - a bare NAME resolves to an earlier assignment in the same model (§8.3), never to a field. **Field references** are always dotted. This rule is what makes `roa > lag(roa, 1)` unambiguous.
-- **Cross-model references** *(phase 2)* - `quality.composite` (a model name dotted with an export) reads another model's export as a field. The validator resolves model exports before schema namespaces.
+- **Name references** - a bare NAME resolves to an earlier assignment in the same model (§8.3), never to a field, with two reserved exceptions: **`time`** (the period-end instant of each cell) and **`entity`** (the cell's canonical entity id) are the panel's own index columns and may be referenced directly - e.g. `year(time)` for a calendar factor, or `entity == "SPY"`. **Field references** are always dotted. This rule is what makes `roa > lag(roa, 1)` unambiguous.
+- **Cross-model references** *(post-1.0)* - `quality.composite` (a model name dotted with an export) reads another model's export as a field. Until implemented, such a reference is `E-FIELD-UNKNOWN`.
+
+### 6.3 Field-reference qualifiers (`@`)
+
+`@` is a single postfix operator that qualifies a **schema field reference** (never an expression - `(a + b) @ fmp` is a syntax error). A field reference carries **at most one** `@` qualifier; the three are mutually exclusive. The frequency prefix (§4.4) is a *prefix*, not an `@` qualifier, and composes with whichever `@` qualifier is present.
+
+| Qualifier | Form | Meaning | Reference |
+|---|---|---|---|
+| `@ source` | bare source name | pin to exactly one configured source, skipping coalescing | §5.2 |
+| `@ entity("<id>")` | quoted canonical entity id | read a specific entity's series and broadcast it across the grid | §4.7 |
+| `@ align(<temporal-expr>)` | temporal expression over the source's date columns | override the field's alignment coordinate (§4.5) | below |
+
+**Mutual exclusivity and stacking.** Source and entity are exclusive (a reference pins one axis, never both). A second `@` qualifier of any kind is rejected at parse time - chaining would silently drop the first. So `income.revenue @ edgar`, `income.revenue @ entity("SPY")`, and `income.revenue @ align(...)` are each legal, but `income.revenue @ edgar @ align(...)` is not. (The `@ asof` and `@ params(...)` selectors are reserved for post-1.0; Appendix B.)
+
+**`@ align(<expr>)`** overrides a field's known-date coordinate (§4.5) with a temporal expression whose only free names are the resolving source's exposed date columns (given without the `__date:` prefix). It composes the temporal operators of §7.3:
+
+```trail
+income.revenue @ align(year(filing_date))     # align on filing-year rather than the provider default
+price.adj_close @ align(trade_date)           # the provider default, written explicitly
+```
+
+The expression is validated statically and at load. It may reference only date-column names and temporal functions - referencing a schema field, or any non-temporal construct, is `E-ALIGN-EXPR`; naming a date column the source does not provide is `E-ALIGN-UNKNOWN`; an expression that does not evaluate to a datetime is `E-ALIGN-DTYPE`. Referencing one field with **conflicting** coordinates within a single model (a plain reference and an overridden one, or two different overrides) is `E-ALIGN-CONFLICT` - a field resolves to one coordinate per model.
 
 ---
 
@@ -377,7 +428,7 @@ A `def` (§8.8) may compose primitives and other derived functions; it can never
 
 Axis legend: **T** = time-series (within each entity, along periods), **X** = cross-sectional (within each period, across the enclosing universe; accepts trailing `by <field>`), **E** = elementwise, **M** = model-context.
 
-Windows, quantiles, and periods (`n`, `q`, `p`) MUST be numeric literals (invariant I3 - static data requirements). `cagr(x, n)` with a computed `n` is `E-ARG-STATIC` *(reserved; enforced structurally in phase 1 by literal-only compilation of these arguments)*.
+Windows, quantiles, and periods (`n`, `q`, `p`) MUST be numeric literals (invariant I3 - static data requirements). `cagr(x, n)` with a computed `n` is `E-ARG-STATIC` *(reserved; enforced structurally by literal-only compilation of these arguments)*.
 
 ### 7.1 Time-series functions (T)
 
@@ -404,9 +455,9 @@ The workbook's dominant idiom composes directly:
 improving = roll_mean(fcf_per_share, 3) > roll_mean(fcf_per_share, 5)
 ```
 
-**`roll_quantile(x, n, q)`** - rolling `q`-quantile over the window. Historical VaR at 95%: `roll_quantile(price.return, 60, 0.05)`. Quantile interpolation is implementation-defined in v0.2 *(standardization pending)*.
+**`roll_quantile(x, n, q)`** - rolling `q`-quantile over the window. Historical VaR at 95%: `roll_quantile(price.return, 60, 0.05)`. Quantile interpolation is implementation-defined *(standardization pending)*.
 
-**`roll_tail_mean(x, n, q)`** *(phase 2)* - mean of window values ≤ the `q`-quantile: historical CVaR / expected shortfall.
+**`roll_tail_mean(x, n, q)`** *(post-1.0)* - mean of window values ≤ the `q`-quantile: historical CVaR / expected shortfall.
 
 **`roll_cov(x, y, n)` / `roll_corr(x, y, n)`** - rolling covariance / Pearson correlation of two panels.
 
@@ -454,7 +505,7 @@ x (n=3, signed)  : −10 … 60        → start′=10, end′=80 → (80/10)^(1
 dso = (avg2(balance.accounts_receivable) / income.revenue) * 365
 ```
 
-**`sply(x)`**, **`ttm(x)`** *(phase 2)* - see §4.4.
+**`ttm(x)`** - trailing twelve months, kind-aware; live (a desugar, see §4.4 and §7.7). **`sply(x)`** *(post-1.0)* - same period last year.
 
 ### 7.2 Cross-sectional functions (X)
 
@@ -516,6 +567,17 @@ Because `xs_*` values depend on the entire group, changing universe membership c
 
 Bare-literal arguments to these scalar functions are lifted to constants (`log(10)` is valid). Non-transcendental scalar helpers (`log10`, `sigmoid`, `sign`, `hypot`, `signed_log`, …) are **derived** functions in the standard library (§8.8), not primitives.
 
+**Temporal (calendar) functions.** These primitives operate on a **datetime** value - the panel atom `time` (§6.2), a source date column inside an `@ align(…)` override (§6.3), or any datetime-typed field. They serve double duty: general calendar factors in a model (seasonality, "is Q4", fiscal-vs-calendar offsets) and the reduction inside an alignment-coordinate override.
+
+| Function | Arity | Semantics | Example |
+|---|---|---|---|
+| `year(t)` | 1 | calendar year of a datetime | `is_q4 = quarter(time) == 4` |
+| `month(t)` | 1 | calendar month (1-12) | |
+| `quarter(t)` | 1 | calendar quarter (1-4) | |
+| `day(t)` | 1 | day of month (1-31) | |
+| `truncate(t, unit)` | 2 | truncate to a duration bucket; `unit` a duration string (`"1y"`, `"1mo"`, `"1d"`, …) | `truncate(time, "1y")` |
+| `datediff(a, b [, unit])` | 2-3 | whole units between two datetimes; `unit` ∈ `days` \| `hours` \| `minutes` \| `seconds` (default `days`) | `datediff(time, ipo_date)` |
+
 ### 7.4 The negative-value shift rule
 
 For `cagr`/`increase` with `start = lag(x, n)` and `end = x`:
@@ -547,7 +609,7 @@ result      = numerator / denominator      (null if denominator = 0)
 
 `skip` renormalizes so data gaps don't penalize; `zero` treats absence as failure. Choose per model with `on_missing`.
 
-### 7.6 Registered functions *(phase 2)*
+### 7.6 Registered functions *(post-1.0)*
 
 Deployment-whitelisted, kind-typed, vectorized host functions - the escape hatch for math outside panel algebra (multivariate regression residuals, DCF table models). Calls are grammatically ordinary; §11 specifies the ABI. Standard packs: statistical (`ols_residual`, `ff3_residual`) and valuation (`dcf_two_stage`, `gurufocus_projected_fcf`, `peter_lynch_fair_value`, `growth_factor`).
 
@@ -562,7 +624,7 @@ Cross-frequency transforms (§4.4) are ordinary calls that align a field from it
 - **`resample(x, freq, agg)`** - re-bucket `x` to `freq`, reducing each target bucket with `agg` (downsampling; `freq`/`agg` are literals).
 - **`to_annual(x)`, `to_quarterly(x)`, `to_monthly(x)`, `to_daily(x)`** - sugar for `resample`, `agg` defaulting to the field's kind rule (§4.2) unless a second argument overrides.
 - **`asof(x)`** - upsample by carrying the last known value forward (backward as-of join): the safe coarse-to-fine rule.
-- **`ttm(x)` / `trailing(x, "1y")`** - trailing-window transform, kind-aware (rolling `flow` **sum**, `stock` **last**). `sply(x)` is same-period-last-year.
+- **`ttm(x)` / `trailing(x, "1y")`** - trailing-window transform, kind-aware (rolling `flow` **sum**, `stock` **last**). `sply(x)` (same-period-last-year) is *(post-1.0)*.
 - **Duration windows** - every `roll_*` reducer accepts a duration string (`"1y"`, `"90d"`, `"4q"`) as its window in addition to an integer count.
 
 The **aggregation library** supplies the `agg` argument (the reduction applied to a downsample bucket, a list of values):
@@ -582,7 +644,7 @@ The **aggregation library** supplies the `agg` argument (the reduction applied t
 
 A program is one or more declarations. Universe/model/signal/strategy names share one program-level namespace; redeclaring a name is `E-NAME-REBOUND`. Declaration order does not matter for cross-declaration references; assignment order matters *within* a model.
 
-### 8.1 `import` *(inclusion: phase 2)*
+### 8.1 `import` *(inclusion: post-1.0)*
 
 ```trail
 import "metrics/base.trail"
@@ -604,7 +666,7 @@ universe nonfin  = us_main where meta.sector != "Financials"
 universe liquid  = nonfin where meta.market_cap > 200e6
 ```
 
-The `where` expression is an ordinary boolean expression over schema fields (and, phase 2, cross-model exports - `sharia.compliant`). Membership is evaluated per period (§4.6).
+The `where` expression is an ordinary boolean expression over schema fields (and, post-1.0, cross-model exports - `sharia.compliant`). Membership is evaluated per period (§4.6).
 
 ### 8.3 `model`
 
@@ -620,7 +682,7 @@ Defaults: `at annual`; `on_missing skip`. `on` may be omitted when the program d
 
 **Assignments** - `name = expr` binds a panel visible to *later* statements in the same model. Top-to-bottom scoping; forward references are `E-NAME-UNDEFINED`; rebinding is `E-NAME-REBOUND`.
 
-**`export name = expr`** - an assignment that is also materialized: it appears in the model's output and (phase 2) is addressable program-wide as `MODEL.name`. Exports are the model's only externally visible effect.
+**`export name = expr`** - an assignment that is also materialized: it appears in the model's output and (post-1.0) is addressable program-wide as `MODEL.name`. Exports are the model's only externally visible effect.
 
 **`score name weight N { … }`** - ordered, first-match-wins cases ending in a mandatory `else`:
 
@@ -632,7 +694,7 @@ score revenue_growth_score weight 7 {
 }
 ```
 
-Per cell: cases are tested top to bottom; the first true condition's value is the result; null conditions do not match (§4.3 rule 4); if none match, the `else` value; and if *every* condition is null the score is null (§4.3 rule 4, all-null case). Case values and the `else` value MUST be non-negative numeric literals - enforced at parse time (a non-literal there is a syntax error, not a deferred diagnostic). Numeric-literal values are what let `weighted_score()` compute each score's maximum statically. Conditions are arbitrary boolean expressions, including references to other scores or macro series (floating hurdles, §4.1). `weight` is metadata: it does not affect the score panel itself, only `weighted_score()` and phase-4 weight learning, where declared weights are **priors** that a learned weight table may override without touching source.
+Per cell: cases are tested top to bottom; the first true condition's value is the result; null conditions do not match (§4.3 rule 4); if none match, the `else` value; and if *every* condition is null the score is null (§4.3 rule 4, all-null case). Case values and the `else` value MUST be non-negative numeric literals - enforced at parse time (a non-literal there is a syntax error, not a deferred diagnostic). Numeric-literal values are what let `weighted_score()` compute each score's maximum statically. Conditions are arbitrary boolean expressions, including references to other scores or macro series (floating hurdles, §4.1). `weight` is metadata: it does not affect the score panel itself, only `weighted_score()` and post-1.0 weight learning, where declared weights are **priors** that a learned weight table may override without touching source.
 
 A score declaration binds its name like an assignment: later statements may reference it.
 
@@ -677,7 +739,7 @@ signal value_composite on nonfin at annual =
 
 is equivalent to `model value_composite on nonfin at annual { export value_composite = … }`.
 
-### 8.5 `strategy` *(execution: phase 3)*
+### 8.5 `strategy` *(execution: post-1.0)*
 
 ```
 strategy NAME {
@@ -732,7 +794,7 @@ strategy trend_momentum {
 }
 ```
 
-### 8.6 `backtest` *(execution: phase 3)*
+### 8.6 `backtest` *(execution: post-1.0)*
 
 ```
 backtest STRATEGY from DATE to DATE {
@@ -752,7 +814,7 @@ backtest trend_momentum from 2010-01 to 2025-12 {
 
 `pit_lag` sets the filing-date lag used for all PIT alignment (§4.4) in this run. Report metrics are engine-computed over the simulated return stream - portfolio-level risk metrics live here, while §7.1's operators build per-entity *features*.
 
-### 8.7 `learn` *(execution: phase 4)*
+### 8.7 `learn` *(execution: post-1.0)*
 
 ```
 learn weights for MODEL {
@@ -772,7 +834,7 @@ learn weights for fundamentals {
 }
 ```
 
-Semantics: per segment, estimate score weights against the forward-return target under the named method, validated as declared; output is a **weight table** (data, not code) the runtime may bind in place of the model's `weight` priors. Method and validation vocabularies are engine-defined *(finalized with phase 4)*.
+Semantics: per segment, estimate score weights against the forward-return target under the named method, validated as declared; output is a **weight table** (data, not code) the runtime may bind in place of the model's `weight` priors. Method and validation vocabularies are engine-defined *(finalized post-1.0)*.
 
 ### 8.8 `def` - user and standard-library functions
 
@@ -801,49 +863,52 @@ Because the derived layer is expressible this way, most of the function catalog 
 
 ## 9. Diagnostics
 
-Validators MUST report at minimum the following. Errors block compilation; warnings do not. `trail validate` exits 0 iff no errors.
+Validators and the runtime MUST report at minimum the following. Errors block compilation/execution; warnings do not. `trail validate` exits 0 iff no errors. The **stage** column names where a diagnostic is raised: `static` (AST validation, config-free), `config` (`trail.yaml` load), `load` (source loading + alignment), or `run` (execution). This list is the authoritative set emitted by the reference implementation.
 
-| Code | Severity | Phase | Condition | Trigger example |
+| Code | Severity | Stage | Condition | Trigger example |
 |---|---|---|---|---|
-| `E-FIELD-UNKNOWN` | error | 1 | field/`by` target not in schema | `income.bogus` |
-| `E-FUNC-UNKNOWN` | error | 1 | function neither built-in nor registered | `frobnicate(x)` |
-| `E-FUNC-ARITY` | error | 1 | wrong positional argument count | `lag(x)` |
-| `E-NAME-UNDEFINED` | error | 1 | name used before assignment in its model | `a = b + 1` with no `b` |
-| `E-NAME-REBOUND` | error | 1 | name reused within a model, or duplicate top-level declaration | two `model quality` decls |
-| `E-SCORE-LITERAL` | error (parse) | 1 | score case/else value not a numeric literal - rejected by the grammar (surfaces as a syntax error) | `x if c else 0` in a score block |
-| `E-FWD-CONTEXT` | error | 1 | `fwd_return` outside `learn.target` | `a = fwd_return(12m)` |
-| `E-UNIVERSE-UNKNOWN` | error | 1 | `on` names an undeclared universe (or omitted with ≠1 universe) | `model m on nowhere` |
-| `E-SOURCE-UNKNOWN` | error | 1 (config) / 2 (pins) | pin or precedence names an undeclared source | `x @ nosuch` |
-| `E-SOURCE-DRIVER` | error | 1 (config) | driver is neither a registered `trail.sources` entry point nor a resolvable dotted path | `driver: nosuch` |
-| `E-SOURCE-PANEL` | error | 1 | source panel lacks `entity`/`time`, or (under `panel.strict`) any contract deviation | |
-| `W-UPSAMPLE-FLOW` | warning | 1 | a `flow`/`return` field upsampled by as-of (repeating a total mis-scales it; resample explicitly) | `income.revenue` at `daily` |
-| `W-SOURCE-PANEL` | warning | 1 | non-strict: source panel deviated from the contract and was coerced | |
-| `E-PIN-UNSUPPORTED` | error | 1 only | any source pin before phase 2 | `x @ fmp` |
-| `E-ENTITY-UNKNOWN` | error | 1 | an entity pin references an entity with no rows after fetch (§4.7) | `x @ entity("NOSUCH")` |
-| `E-IMPORT-CYCLE` | error | 2 | import cycle | a imports b imports a |
-| `E-FUNC-RECURSION` | error | 1 | a `def` calls itself directly or transitively | `def f(x) = f(x)` |
-| `E-FUNC-DUP` | error | 1 | two `def`s share a name | - |
-| `W-MEDIAN-DEFERRED` | warning | 1 only | `on_missing median` (treated `skip`) | |
-| `W-KIND-STOCK-FLOW` | warning | 1 | bare `stock`/`flow` division without `avg2`/`lag` | `income.cogs / balance.inventory` |
-| `E-FREQ-UNAVAILABLE` | error | 1 | no configured source provides the field at the requested frequency | `quarterly.income.revenue` on an annual-only source |
-| `E-FREQ-UNWIRED` | error | 1 (config) | a source advertises frequencies beyond its default but load() has no named `frequency=` parameter | |
-| `E-FIELD-UNSERVED` | error | 1 (config) | a referenced bare field that no configured source provides | `price.adj_close` on edgar |
-| `E-SOURCE-EMPTY` | error | 1 (config) | no configured source provides any requested field | |
-| `E-DIM-UNKNOWN` | error | 1 | a source declares an entity dimension the engine has no bridge for | |
-| `E-DIM-UNMAPPED` | error | 1 | a foreign-dimension source is configured but no entity source provides its bridge field | `gmd.*` without `meta.country` |
-| `E-DIM-AMBIGUOUS` | error | 1 | multiple foreign dimensions with no entity-bearing source | |
-| `E-BROADCAST-MIXED` | error | 1 | a panel mixes the `*` sentinel with real entities | |
-| `E-NO-ENTITY` | error | 1 | every source is a global broadcast series; nothing to compute on | |
-| `E-ENTITY-UNKNOWN` | error | 1 | an entity pin references an entity with no rows after fetch (§4.7) | `x @ entity("NOSUCH")` |
-| `E-AGG-UNKNOWN` | error | 1 | a literal aggregation name the engine does not know | `resample(x, "annual", "avg")` |
-| `E-FREQ-UNKNOWN` | error | 1 | a literal frequency name outside the ladder | `resample(x, "yearly", "sum")` |
-| `E-MODEL-CONTEXT` | error | 1 | `weighted_score()` anywhere but as a complete model-assignment RHS | `weighted_score() + 1` |
-| `E-UNIVERSE-CYCLE` | error | 1 | universe root chains form a cycle | `a = b where ...; b = a where ...` |
-| `E-PHASE-DEFERRED` | error | 1 | running a construct whose execution lands in a later phase | `run --model <strategy>` |
-| `W-UPSAMPLE-FLOW` | warning | 1 | (see above) | |
-| `W-GRID-COARSER` | warning | 1 | no source natively populates the target frequency; the grid keeps coarser resolution | `at daily` over annual-only sources |
+| `E-FIELD-UNKNOWN` | error | static | a field or `by` target not in the active schema | `income.bogus` |
+| `E-FUNC-UNKNOWN` | error | static | a function name not in the registry (also inside `@ align`) | `frobnicate(x)` |
+| `E-FUNC-ARITY` | error | static | wrong positional-argument count (built-in, `@ align`, or a `def` macro; a `def` also rejects keyword args) | `lag(x)` |
+| `E-NAME-UNDEFINED` | error | static | a bare name used before assignment in its model (and not `time`/`entity`) | `a = b + 1` with no `b` |
+| `E-NAME-REBOUND` | error | static | a name reused within a model, or a duplicate top-level declaration | two `model quality` decls |
+| `E-FWD-CONTEXT` | error | static | `fwd_return` outside `learn.target` | `a = fwd_return(12m)` |
+| `E-MODEL-CONTEXT` | error | static | `weighted_score()` anywhere but as the complete RHS of a model assignment | `weighted_score() + 1` |
+| `E-UNIVERSE-UNKNOWN` | error | static | `on` names an undeclared universe (or is omitted with ≠1 universe), or a universe root is unknown | `model m on nowhere` |
+| `E-UNIVERSE-CYCLE` | error | static | universe root chains form a cycle | `a = b where …; b = a where …` |
+| `E-AGG-UNKNOWN` | error | static | a literal aggregation name the engine does not know | `resample(x, "annual", "avg")` |
+| `E-FREQ-UNKNOWN` | error | static | a literal frequency name outside the ladder | `resample(x, "yearly", "sum")` |
+| `E-ALIGN-EXPR` | error | static / load | an `@ align(…)` references a schema field, or uses a non-temporal construct | `@ align(income.revenue)` |
+| `E-ALIGN-CONFLICT` | error | static | one field referenced with conflicting `@ align` coordinates in a model (plain vs overridden, or two overrides) | `x` and `x @ align(…)` together |
+| `E-ALIGN-UNKNOWN` | error | load | an `@ align(…)` names a date column the source does not provide | `@ align(no_such_date)` |
+| `E-ALIGN-DTYPE` | error | load | an `@ align(…)` expression does not evaluate to a datetime coordinate | `@ align(year(filing_date))` |
+| `E-FUNC-RECURSION` | error | static | a `def` calls itself directly or transitively | `def f(x) = f(x)` |
+| `E-FUNC-DUP` | error | static | two `def`s share a name | - |
+| `E-SOURCE-NAME` | error | config | a source name not matching `^[A-Za-z0-9_-]+$` (would break the `#source` codec tag) | `sources: { a.b: … }` |
+| `E-SOURCE-UNKNOWN` | error | config | a `precedence` chain names an undeclared source | `precedence.default: [nosuch]` |
+| `E-SOURCE-DRIVER` | error | config | a `driver` neither a registered `trail.sources` name nor a resolvable dotted path | `driver: nosuch` |
+| `E-SOURCE-PANEL` | error | load | a source panel lacks `entity`/`time`, or (under `panel.strict`) any contract deviation | |
+| `E-SOURCE-EMPTY` | error | load | no configured source provides any requested field | |
+| `E-PIN-SOURCE-UNKNOWN` | error | load | an `@ source` pin names an undeclared source | `x @ nosuch` |
+| `E-PIN-UNSERVED` | error | load | an `@ source` pin names a configured source that does not provide the field (at that frequency) | `price.adj_close @ edgar` |
+| `E-FIELD-UNSERVED` | error | load | a referenced bare field no configured source provides | `price.adj_close` on an edgar-only config |
+| `E-FREQ-UNAVAILABLE` | error | load | no configured source provides the field at the requested frequency | `quarterly.income.revenue` on an annual-only source |
+| `E-COALESCE-DIM-MIXED` | error | load | a field coalesces across sources of different entity dimensions | `income.*` chain mixing an entity- and a country-keyed source |
+| `E-DIM-NOBRIDGE` | error | load | a foreign-dimension source declares no `Capabilities.bridge_field` | |
+| `E-DIM-UNMAPPED` | error | load | a foreign-dimension source is configured but no entity source provides its bridge field | `gmd.*` without `meta.country` |
+| `E-DIM-AMBIGUOUS` | error | load | multiple foreign dimensions with no entity-bearing source | |
+| `E-BROADCAST-MIXED` | error | load | a source panel mixes the `*` sentinel with real entities | |
+| `E-NO-ENTITY` | error | load | every source is a global broadcast series; nothing to compute on | |
+| `E-ENTITY-UNKNOWN` | error | load | an entity pin references an entity with no rows after fetch (§4.7) | `x @ entity("NOSUCH")` |
+| `E-PHASE-DEFERRED` | error | run | executing a construct whose execution is a post-1.0 extension point | `run --model <strategy>` |
+| `W-KIND-STOCK-FLOW` | warning | static | a bare `flow`/`stock` division without `avg2`/`lag` | `income.cogs / balance.inventory` |
+| `W-MEDIAN-DEFERRED` | warning | static | `on_missing median` parses but is treated as `skip` | |
+| `W-UPSAMPLE-FLOW` | warning | load | a `flow`/`return`/`per_share` field upsampled by as-of (repeating a total mis-scales it; resample explicitly) | `income.revenue` at `daily` |
+| `W-SOURCE-PANEL` | warning | load | non-strict: a source panel deviated from the contract and was coerced | |
+| `W-GRID-COARSER` | warning | load | no source natively populates the target frequency; the grid keeps coarser resolution | `at daily` over annual-only sources |
+| `W-PIT-PARTIAL` | warning | load | some rows carry no known-date coordinate; those are placed at period-end (naive) | |
 
-Reserved for future standardization: `E-TYPE-ORDER` (ordered comparison on strings), `E-ARG-STATIC` (non-literal window arguments).
+A **score** case/else value that is not a numeric literal is a plain **syntax error** (the grammar requires `NUMBER`, §12); no diagnostic code is emitted for it. Reserved for future standardization and not currently emitted: `E-TYPE-ORDER` (ordered comparison on strings), `E-ARG-STATIC` (non-literal window arguments), and `E-IMPORT-CYCLE` (reserved for the post-1.0 `import` inclusion). Codes present in pre-1.0 drafts and now **removed**: `E-PIN-UNSUPPORTED` (source pins execute), `E-DIM-UNKNOWN` (the dimension bridge is source-declared, §5.4), and `E-FREQ-UNWIRED`.
 
 ---
 
@@ -856,15 +921,15 @@ The CLI binds programs to data through a YAML file. Resolution order: `--config 
 ```yaml
 # trail.yaml
 panel:
-  periods: [2015, 2025]          # optional time bounds (fiscal years or ISO dates)
-  frequency: annual              # optional target frequency; default = finest referenced source
+  periods: [2015, 2025]          # optional decision-time bounds (fiscal years or ISO dates)
   strict: false                  # true = a non-conforming source panel is a hard error
+  pit: auto                      # auto (default) = place by known-date; naive = place at period-end
 
 sources:                         # name -> driver binding; keys are the language-visible
-  fixture:                       # source names used by '@' pins
+  fixture:                       # source names (used by '@ source' pins); must match [A-Za-z0-9_-]+
     driver: fixture              # a registered trail.sources name, or a dotted path
   fmp:
-    driver: trail.sources.aiofmp_cache      # phase 2
+    driver: trail.sources.aiofmp_cache
     options:
       cache_path: ~/aiofmp-cache
       api_key_env: FMP_API_KEY              # env var NAME - never the secret itself
@@ -873,30 +938,99 @@ sources:                         # name -> driver binding; keys are the language
     options:
       identity: "name contact@example.com"  # SEC fair-access User-Agent
       tickers: [AAPL, MSFT]
+      pit: naive                            # optional per-source override of panel.pit
 
-precedence:                      # namespace -> ordered source names (per-cell first-non-null)
-  default: [fmp]
-  statements: [edgar, fmp]       # phase 2: per-namespace chains
+precedence:                      # namespace (a field's first dotted segment) -> ordered source chain
+  default: [fmp]                 # required fallback chain
+  income: [edgar, fmp]           # per-namespace chains; a field served by >1 coalesces per cell
   price: [fmp]
 ```
 
+The **target frequency** is not a config key: it comes from each `model`/`signal`'s `at <freq>` (else the finest frequency referenced, §4.4).
+
 ### 10.2 Normative rules
 
-1. **Driver contract.** A driver resolves to a `factory(options: dict) -> DataSource`, either by a registered name (Python entry-point group `trail.sources`, so `pip install trail-<name>` exposes `driver: <name>`) or by a dotted import path; registered names take precedence. A `DataSource` implements one required method, `load(fields: set[str], *, periods=None) -> panel`, returning the long-format panel (§4.1) for the requested schema columns. It MAY also implement the extended-tier capabilities - field discovery, universe enumeration, and a capabilities descriptor - which `trail catalog` and (phase 2) multi-source routing use when present. An unresolvable driver is a startup configuration error (`E-SOURCE-DRIVER`), not a query-time error.
-2. **Precedence.** `precedence.default` is required (inferred as "all declared sources, declaration order" only when `precedence` is entirely absent). Namespace keys override `default`. Every source named in any chain MUST exist under `sources` (`E-SOURCE-UNKNOWN`). Phase 1 supports exactly one effective source (the first of `default`); per-cell multi-source coalescing is phase 2.
-3. **Secrets** are referenced by environment-variable name (`api_key_env`); configurations containing literal secrets SHOULD be rejected by tooling.
-4. **Panel conformance.** A returned panel MUST carry `entity` and `time` columns; their absence is always `E-SOURCE-PANEL` (nothing can be coerced). Other deviations - a missing requested field, a `time` not typed as a timestamp, or a column outside the schema - are `E-SOURCE-PANEL` under `panel.strict: true`, otherwise `W-SOURCE-PANEL` with coercion: columns outside the schema are dropped, `time` is cast to a period-end timestamp, and missing requested fields are added as all-null columns. `panel.strict` defaults to `false`; production configurations SHOULD set it `true`.
-5. **Pluggable schema.** A source package MAY extend the canonical field vocabulary by contributing fields under the `trail.schema` entry-point group; each entry point resolves to a mapping of dotted column to kind (e.g. `{"gmd.rGDP": "level", "gmd.infl": "rate"}`). Contributions merge with the built-in fields into the *active schema* (built-in wins on collision) that validation, `trail catalog`, and panel conformance use. Field kinds are freeform strings identifying the measure (`level`, `rate`, `index`, `ratio`, ...); only `flow` and `stock` carry special meaning (the `W-KIND-STOCK-FLOW` lint). Contributing the vocabulary is independent of a source instance advertising which of those fields it actually serves (the discovery capability).
-6. **Pins ↔ config.** `@ name` in programs resolves against `sources` keys - configuration is what gives pin names meaning. Dependency extraction (I3) reports pinned fields per source so the runtime can prefetch exactly what a program needs.
-7. **Frequency alignment.** Each source declares a native frequency (its capabilities descriptor). The runtime aligns every source panel to the model's target frequency (§4.4) - downsample by kind or upsample by as-of - and merges the aligned panels on `(entity, time)`.
-8. **`panel.periods`** bounds the `time` axis after loading (years or ISO dates); **`panel.frequency`** sets the default target frequency (else finest referenced). Neither changes PIT semantics.
-9. `trail validate` is config-free (pure static analysis); only `trail run`/`backtest` read the config.
+1. **Driver contract.** A driver resolves to a `factory(options: dict) -> DataSource`, either by a registered name (Python entry-point group `trail.sources`, so `pip install trail-<name>` exposes `driver: <name>`) or by a dotted import path; registered names take precedence. A `DataSource` implements the three mandatory methods of the data-source contract (§11) - `load(LoadRequest) -> panel`, `available_fields(frequency=None)`, and `capabilities()` - and MAY implement the optional refinements (`describe_field`, `entities`, `close`). Discovery is core, not an optional protocol: a source that does not declare what it serves cannot participate in routing. An unresolvable driver is a startup configuration error (`E-SOURCE-DRIVER`), not a query-time error.
+2. **Source names.** Each key of `sources` is used verbatim as a `#source` column tag, so it MUST match `^[A-Za-z0-9_-]+$` (no `.`, `@`, `#`); a name that does not is `E-SOURCE-NAME`.
+3. **Precedence and coalescing.** `precedence` maps a **namespace** - a field's first dotted segment - to an ordered source chain. `precedence.default` is required (inferred as "all declared sources, declaration order" only when `precedence` is entirely absent, e.g. the built-in default config). A namespace with no chain of its own falls back to `default`. Every source named in any chain MUST exist under `sources` (`E-SOURCE-UNKNOWN`). A field served by more than one source in its chain **coalesces per `(entity, period)` cell** - first non-null in chain order (§5.1); a field no chain source serves is `E-FIELD-UNSERVED`. Coalescing across sources of different entity dimensions is `E-COALESCE-DIM-MIXED`.
+4. **Secrets** are referenced by environment-variable name (`api_key_env`); configurations containing literal secrets SHOULD be rejected by tooling.
+5. **Panel conformance.** A returned panel MUST carry `entity` and `time` columns; their absence is always `E-SOURCE-PANEL` (nothing can be coerced). Other deviations - a missing requested field, a `time` not typed as a timestamp, a reserved `__date:*` date column with a non-temporal dtype, or a column outside the active schema - are `E-SOURCE-PANEL` under `panel.strict: true`, otherwise `W-SOURCE-PANEL` with coercion: unknown columns are dropped, `time` (and any `__date:*` coordinate) is cast to the canonical period-end `Datetime`, and missing requested fields are added as all-null columns. Reserved `__date:*` columns (§11.3) pass through conformance. `panel.strict` defaults to `false`; production configurations SHOULD set it `true`.
+6. **Pluggable schema.** A source package MAY extend the canonical field vocabulary by contributing fields under the `trail.schema` entry-point group; each entry point resolves to a mapping of dotted column to kind (e.g. `{"gmd.rGDP": "level", "gmd.infl": "rate"}`). Contributions merge with the built-in fields into the *active schema* (built-in wins on collision) that validation, `trail catalog`, and panel conformance use. Field kinds are freeform strings identifying the measure (`level`, `rate`, `index`, `ratio`, ...); only `flow` and `stock` carry special meaning (the `W-KIND-STOCK-FLOW` lint). Contributing the vocabulary is independent of a source instance advertising which of those fields it actually serves (the discovery capability). This is the mechanism by which a provider package adds a domain vocabulary (§10 note; Appendix B).
+7. **Pins ↔ config.** An `@ source` pin resolves against `sources` keys - configuration is what gives pin names meaning (`E-PIN-SOURCE-UNKNOWN` for an undeclared source, `E-PIN-UNSERVED` when the pinned source does not serve the field). Dependency extraction (I3) reports pinned fields per source so the runtime can prefetch exactly what a program needs.
+8. **Frequency alignment.** Each source declares its native frequency and any additional `frequencies` (its `Capabilities`). The runtime aligns every source panel to the model's target frequency (§4.4) - downsample by kind or upsample by as-of, placing by each field's known-date coordinate (§4.5) - and merges the aligned panels on `(entity, time)`.
+9. **Point-in-time.** `panel.pit` is `auto` (default) or `naive` (a value outside that set is a config error). `auto` places each value by its known-date coordinate where a source supplies one; `naive` ignores all coordinates and places every value at its period-end. A single source may override globally-`auto` placement with the source option `options.pit: naive`. (`options.pit_lag`, where present, is an adapter-level convention: the adapter synthesizes a known-date = period-end + lag for a source that has none; it is not interpreted by the core config.)
+10. **`panel.periods`** bounds the `time` axis after loading (years or ISO dates); under `panel.pit: auto` this is the **decision** calendar (§4.5). It does not change PIT semantics.
+11. `trail validate` is config-free (pure static analysis); only `trail run`/`backtest` read the config.
 
 ---
 
-## 11. Registered function ABI *(phase 2)*
+## 11. The data-source contract
 
-A registered function declares: a **name**, positional **parameter kinds**, a **return kind**, and a vectorized host implementation. Registration is deployment configuration (an allow-list), not program text; agents may propose functions, humans review the host code.
+A data source turns a request into an `(entity × time)` panel and declares what it serves. The contract is one tier: `load`, `available_fields`, and `capabilities` are mandatory; `describe_field`, `entities`, and `close` are optional refinements with safe defaults. Discovery is mandatory - a source cannot participate without declaring what it provides, which is what makes multi-source routing (§5) and per-cell coalescing well-defined. Providers register under the `trail.sources` entry-point group, so `pip install trail-<name>` makes `driver: <name>` usable by name.
+
+### 11.1 The `DataSource` interface
+
+```python
+class DataSource(ABC):
+    name: str                                                # stable short name (= entry-point name)
+
+    def load(self, request: LoadRequest) -> pl.DataFrame: ...          # mandatory
+    def available_fields(self, frequency: str | None = None) -> set[str]: ...  # mandatory
+    def capabilities(self) -> Capabilities: ...                        # mandatory
+
+    def describe_field(self, field: str) -> FieldInfo | None: ...      # optional (default None)
+    def entities(self, universe: str | None = None) -> list[str]: ...  # optional (default [])
+    def close(self) -> None: ...                                       # optional (idempotent no-op)
+```
+
+A source is constructed with its `trail.yaml` `options` dict. `available_fields(frequency)` returns the canonical fields the source can serve at that frequency (`None` = its default); a source that serves different fields per frequency branches on it.
+
+### 11.2 `LoadRequest`
+
+The load seam grows by adding fields to this object - versioned and explicit - rather than by feature-detected keyword accretion.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `fields` | `frozenset[str]` | canonical fields to serve (no frequency prefix, no `@` qualifier); the source MAY return a superset |
+| `frequency` | `str \| None` | native frequency to fetch at; `None` = the source's default |
+| `periods` | `tuple[int, int] \| None` | inclusive `(lo, hi)` year bounds - a fetch hint; the runtime re-filters |
+| `entities` | `tuple[str, ...] \| None` | candidate entity universe to scope the fetch to; `None` = the source's own set (populated only for entity-keyed sources) |
+| `params` | `Mapping[str, str]` | `@ params(...)` fetch parameters *(post-1.0)* |
+| `asof` | `bool` | `@ asof` requested a historical series rather than a current snapshot *(post-1.0)* |
+
+### 11.3 The panel-out contract
+
+`load` returns a long-format panel with columns `entity` (Utf8), `time` (Datetime, the economic period-end), and one column per provided field (named by its canonical dotted path). It may return a superset of the requested fields and may ignore `periods` (the runtime re-filters).
+
+A panel MAY also carry one or more reserved **date columns** under the `__date:` namespace (Datetime) - `__date:filing_date`, `__date:trade_date`, … - the per-field **known-date coordinates** of §4.5. These are not schema fields: they stay out of the field vocabulary and out of the `entity`/`time` index, pass through conformance, and are consumed and dropped during alignment before the compiler sees them. A source that emits none is treated as naive (period-end = knowable instantly). Rows must be unique on `(entity, period)` - or, once a source carries a coordinate for restatements, on `(entity, period, coordinate)`. The sentinel entity `*` marks a broadcast series (§5.4).
+
+### 11.4 `Capabilities` and `FieldInfo`
+
+`capabilities()` is the source's self-description:
+
+| `Capabilities` field | Meaning |
+|---|---|
+| `frequency` | the default/native frequency |
+| `frequencies` | every frequency the source can serve (empty = single-frequency) |
+| `period_range` | `(lo, hi)` year coverage, if known |
+| `forms`, `provides_meta`, `provenance` | descriptive metadata |
+| `entity_dim` | the dimension the source's `entity` column denotes; `"entity"` (default) = the canonical grid entity, a coarser value (e.g. `"country"`) is remapped at align time (§5.4) |
+| `bridge_field` | for a foreign dimension, the meta field an entity-keyed source provides that maps each entity to this dimension's key (e.g. `"meta.country"`); read by the engine so no dimension is hardcoded |
+| `pit` | advisory: whether the source supplies real known-dates (emits `__date:*`). Catalog/validate may warn when a source is naive; the engine keys off the actual columns |
+
+`describe_field(field)` optionally returns per-field detail:
+
+| `FieldInfo` field | Meaning |
+|---|---|
+| `field` | the canonical field |
+| `available` | whether the source serves it |
+| `strategy` | `direct` \| `derived` \| `raw` \| `unavailable` |
+| `note` | free text |
+| `aligns_on` | the name of the source date column this field aligns on (a `__date:<name>` coordinate, given WITHOUT the prefix, e.g. `"filing_date"`); `None` = naive (§4.5) |
+
+### 11.5 Registered-function ABI *(post-1.0)*
+
+*(Extension point; not implemented in 1.0. A call to a name the registry does not know is `E-FUNC-UNKNOWN`.)* A registered function declares a **name**, positional **parameter kinds**, a **return kind**, and a vectorized host implementation. Registration is deployment configuration (an allow-list), not program text; agents may propose functions, humans review the host code.
 
 ```python
 @trail_function(returns="ratio")
@@ -905,24 +1039,75 @@ def ff3_residual(returns: Kind.ratio, window: Kind.count) -> Kind.ratio:
     ...  # columnar implementation; per-row Python is a conformance violation (I5)
 ```
 
-The validator treats registered names exactly like built-ins (arity, kind lints, I3 static-window rules). Implementations MUST reject a registered function whose declared signature and host signature disagree.
+When implemented, the validator MUST treat registered names exactly like built-ins (arity, kind lints, I3 static-window rules) and reject a function whose declared and host signatures disagree.
 
 ---
 
 ## 12. Grammar (normative)
 
-```lark
-// file grammar (model files, agent-authored artifacts)
-start: decl+
-// interactive dialect (REPL / notebooks); a strict superset - meta-command, decl, or bare expr
-repl_line: meta_command | decl | expr
-meta_command: "?"            -> meta_catalog
-            | "?" dotted     -> meta_describe   // ?income, ?income.revenue, ?cagr, ?functions, ...
-?decl: import_decl | func_def | universe_decl | model_decl | signal_decl
-     | strategy_decl | backtest_decl | learn_decl
+This is the reference grammar, mirroring `grammar/trail.lark` (the file that drives the reference parser). It is left-recursive for LALR(1) with correct associativity. The `?pinned` rule carries the `@` field-reference qualifiers (§6.3): `selector_pinned` (`atom "@" NAME "(" expr ")"`) is the general selector form - the transformer accepts `entity("<string>")` and `align(<temporal-expr>)` and rejects any other selector; `pinned` (`atom "@" NAME`) is the bare `@ source` pin. A field reference takes at most one `@` qualifier (enforced post-parse).
 
-import_decl: "import" STRING
+```lark
+// ===== Trail grammar (expression layer; declarations appended in Task 3) =====
+
+// ----- expressions: left-recursive for LALR, correct associativity -----
+?expr: ternary
+?ternary: or_e "if" or_e "else" ternary        -> ternary
+        | or_e
+?or_e: or_e "or" and_e                          -> bool_or
+     | and_e
+?and_e: and_e "and" not_e                       -> bool_and
+      | not_e
+?not_e: "not" not_e                             -> not_
+      | cmp
+?cmp: coal CMP_OP coal                          -> compare
+    | coal "in" "(" literal ("," literal)* ")"  -> in_
+    | coal
+?coal: coal "??" sum                            -> coalesce
+     | sum
+?sum: sum SUM_OP prod                           -> arith
+    | prod
+?prod: prod MUL_OP pow_                         -> arith
+     | pow_
+?pow_: unary "^" pow_                           -> power
+     | unary
+?unary: "-" unary                               -> neg
+      | pinned
+?pinned: atom "@" NAME "(" expr ")"             -> selector_pinned
+       | atom "@" NAME                          -> pinned
+       | atom
+?atom: call
+     | ref
+     | literal
+     | "(" expr ")"
+call: NAME "(" [arg ("," arg)*] ")" ("by" dotted)?
+?arg: NAME "=" expr                             -> kwarg
+    | expr
+ref: NAME ("." NAME)*
+dotted: NAME ("." NAME)*
+?literal: NUMBER                                -> number
+        | STRING                               -> string
+        | "true"                               -> true
+        | "false"                              -> false
+
+CMP_OP: "==" | "!=" | ">=" | "<=" | ">" | "<"
+SUM_OP: "+" | "-"
+MUL_OP: "*" | "/" | "%"
+NUMBER: /[0-9][0-9_]*(\.[0-9]+)?([eE][+-]?[0-9]+)?/
+STRING: /"[^"]*"/
+NAME: /[a-zA-Z_][a-zA-Z0-9_]*/
+
+%import common.WS
+%ignore WS
+%ignore /#[^\n]*/
+
+// ===== declarations =====
+start: decl+
+?decl: universe_decl | model_decl | signal_decl | func_def
+     | strategy_decl | backtest_decl | learn_decl | import_decl
+
 func_def: "def" NAME "(" [NAME ("," NAME)*] ")" "=" expr
+import_decl: "import" STRING
 universe_decl: "universe" NAME "=" dotted ("where" expr)?
 model_decl: "model" NAME ("on" NAME)? ("at" FREQ)? "{" model_stmt+ "}"
 ?model_stmt: "desc" STRING                  -> desc_stmt
@@ -930,53 +1115,32 @@ model_decl: "model" NAME ("on" NAME)? ("at" FREQ)? "{" model_stmt+ "}"
            | "export" NAME "=" expr         -> export_stmt
            | "score" NAME "weight" NUMBER "{" score_case+ "else" NUMBER "}" -> score_stmt
            | NAME "=" expr                  -> assign_stmt
-score_case: NUMBER "if" expr        // value is a numeric literal (LALR-clean; avoids the ternary `if` conflict)
+score_case: NUMBER "if" expr
 signal_decl: "signal" NAME ("on" NAME)? ("at" FREQ)? "=" expr
 
 strategy_decl: "strategy" NAME "{" strat_field+ "}"
-?strat_field: "universe" NAME | "signal" expr | "rebalance" FREQ
-            | "select" "top" NUMBER ("where" expr)? | "weighting" WEIGHTING
-            | "hold_band" NUMBER ".." NUMBER | "costs" NAME
-            | "gate" expr | "fallback" NAME | "exposure" expr
+strat_field: "universe" NAME | "signal" expr | "rebalance" FREQ
+           | "select" "top" NUMBER ("where" expr)? | "weighting" WEIGHTING
+           | "hold_band" NUMBER ".." NUMBER | "costs" NAME
+           | "gate" expr | "fallback" NAME | "exposure" expr
 backtest_decl: "backtest" NAME "from" DATE "to" DATE "{" bt_field+ "}"
-?bt_field: "benchmark" dotted | "pit_lag" DURATION | "report" NAME ("," NAME)*
+bt_field: "benchmark" dotted | "pit_lag" DURATION | "report" NAME ("," NAME)*
 learn_decl: "learn" "weights" "for" NAME "{" learn_field+ "}"
-?learn_field: "segment" "by" dotted ("," dotted)* | "target" expr
-            | "method" NAME | "validate" expr
+learn_field: "segment" "by" dotted ("," dotted)* | "target" expr
+           | "method" NAME | "validate" expr
 
-?expr: ternary
-?ternary: or_e ("if" or_e "else" ternary)?
-?or_e: and_e ("or" and_e)*
-?and_e: not_e ("and" not_e)*
-?not_e: "not" not_e | cmp
-?cmp: coal (CMP_OP coal)? | coal "in" "(" literal ("," literal)* ")"
-?coal: sum ("??" sum)*
-?sum: prod (SUM_OP prod)*
-?prod: pow_ (MUL_OP pow_)*
-?pow_: unary ("^" pow_)?
-?unary: "-" unary | pinned
-?pinned: atom ("@" NAME)?
-?atom: call | ref | literal | "(" expr ")"
-call: NAME "(" [arg ("," arg)*] ")" ("by" dotted)?
-?arg: NAME "=" expr | expr
-ref: NAME ("." NAME)*
-dotted: NAME ("." NAME)*
-?literal: NUMBER | STRING | "true" | "false"
-
-CMP_OP: "==" | "!=" | ">=" | "<=" | ">" | "<"
-SUM_OP: "+" | "-"
-MUL_OP: "*" | "/" | "%"
 FREQ: "annual" | "quarterly" | "monthly" | "weekly" | "daily" | "hourly" | "minute"
 POLICY: "skip" | "zero" | "median"
 WEIGHTING: "equal" | "value" | "signal"
-NUMBER: /[0-9][0-9_]*(\.[0-9]+)?([eE][+-]?[0-9]+)?/
-STRING: /"[^"]*"/
 DATE: /\d{4}-\d{2}(-\d{2})?/
 DURATION: /\d+[dmy]/
-%import common.CNAME -> NAME
-%import common.WS
-%ignore WS
-%ignore /#[^\n]*/
+
+// ===== REPL dialect (interactive only; NOT valid in a model file) =====
+// A repl line is a superset of the file grammar: a meta-command, a declaration,
+// or a bare expression. Meta-commands return a catalog result, never a panel.
+repl_line: meta_command | decl | expr
+meta_command: "?"            -> meta_catalog
+            | "?" dotted     -> meta_describe
 ```
 
 Implementations MUST parse with a deterministic algorithm (LALR(1) or equivalent); grammar ambiguity is an implementation defect, not a program error.
@@ -995,9 +1159,19 @@ select signal skip strategy tbills to top true universe validate value weekly
 weight weighting weights where zero
 ```
 
-## Appendix B - Deferred-construct behavior by phase
+## Appendix B - Extension points and deferred-construct behavior
 
-Phase-1 implementations MUST behave as follows: source pins → `E-PIN-UNSUPPORTED`; `sply`/`ttm`/`roll_tail_mean`/registered names → `E-FUNC-UNKNOWN`; `on_missing median` → `W-MEDIAN-DEFERRED` (treated `skip`); cross-model export references → `E-FIELD-UNKNOWN`; `import`/`strategy`/`backtest`/`learn` → parsed; attempting to *execute* them exits with a clear phase error.
+**Live in 1.0.** Source pins (`@ source`), `@ entity(...)`, and `@ align(...)` execute (§6.3); `ttm`/`trailing`/`to_*`/`resample`/`asof` and the temporal operators (§7.3) execute; multi-source precedence chains, per-cell coalescing, and the point-in-time known-date model execute.
+
+**Post-1.0 extension points** (specified, not yet implemented). An implementation MUST behave as follows until each lands:
+
+- **`@ asof` and `@ params(...)` qualifiers.** Reserved selectors; the parser rejects them (only `entity(...)` and `align(...)` are accepted selector forms). `LoadRequest` already carries `asof`/`params` fields as the plumbing seam. When added, they attach to a field reference like the other `@` qualifiers.
+- **Provider vocabularies (e.g. `bank.*`).** A provider package adds a domain namespace through the `trail.schema` entry-point group and serves it through a `trail.sources` driver (§10.2). The mechanism exists in 1.0 - a contributed vocabulary validates, appears in the catalog, and resamples by kind like any built-in field - so a `bank.*`/`gmd.*`-style vocabulary is packaging, not a language change. No `bank.*` fields ship in the core schema.
+- **`sply`, `roll_tail_mean`, registered functions** → `E-FUNC-UNKNOWN`.
+- **`on_missing median`** → parses; `W-MEDIAN-DEFERRED` (treated `skip`).
+- **Cross-model export references** (`MODEL.export`) → `E-FIELD-UNKNOWN`.
+- **`import` inclusion, `strategy`/`backtest`/`learn` execution** → parse; attempting to *execute* them exits with `E-PHASE-DEFERRED`.
+- **Editorial polish** (does not affect conforming programs): splitting a field's `kind` from its physical `dtype`, and publishing the diagnostic set of §9 as a machine-readable error-code registry.
 
 ## Appendix C - Complete annotated example
 
@@ -1032,11 +1206,11 @@ model piotroski on nonfin at annual {
                           f_liquid, f_noissue, f_margin, f_turnover)   # 0..9
 }
 
-# ---------- value signal (phase-2 cross-model refs shown for completeness) ----------
+# ---------- value signal (post-1.0 cross-model refs shown for completeness) ----------
 signal cheap on nonfin at annual =
     zscore(-(price.adj_close / income.eps_diluted))     # cheaper = higher
 
-# ---------- strategy + backtest (phase 3) ----------
+# ---------- strategy + backtest (execution: post-1.0) ----------
 strategy quality_value {
     universe  nonfin
     signal    cheap + zscore(piotroski.fscore)
