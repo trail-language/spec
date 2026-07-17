@@ -150,7 +150,7 @@ downsample bucket (a list of values); `kind` supplies the default, any library r
 | `to_annual/quarterly/monthly/daily(x)` | D | `resample` to that frequency, `agg` = kind default |
 | `asof(x)` | P | upsample: carry the last known value forward (backward as-of join) |
 | `ttm(x)`, `trailing(x, w)` | D | trailing-window transform, kind-aware (flow sum, stock last) |
-| `sply(x)` | D | same period last year |
+| `sply(x)` | R (phase 2 - not yet implemented) | same period last year |
 | `roll_*(x, "1y")` | P | duration-string windows on the rolling reducers |
 
 Aggregation library (the `agg` argument; also a reduction over any bucket):
@@ -167,7 +167,7 @@ Aggregation library (the `agg` argument; also a reduction over any bucket):
 ## The lesson
 
 Of the standard-function surface, the overwhelming majority is **derived** - pure composition
-of a small primitive core (48 primitives: shift, the rolling and cross-sectional reducers,
+of a small primitive core (56 primitives: shift, the rolling and cross-sectional reducers,
 scalar `sqrt/log/exp`, trig, rounding, and the cumulative ops). The 78 functions in
 `stdlib/*.trail` are all Trail source. Only genuine transcendentals (trig), irreducible
 reductions (windows, cross-sections), and matrix/iterative methods need engine code. That is

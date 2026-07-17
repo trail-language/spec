@@ -10,7 +10,7 @@ securities. Expressions are data - written and validated by both humans and AI a
 compile to vectorized columnar operations.
 
 ```trail
-model quality on us_main period annual {
+model quality on us_main at annual {
     operating_margin = income.operating_income / income.revenue
     score om_score weight 7 {
         2 if operating_margin > 0.12

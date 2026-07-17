@@ -824,8 +824,24 @@ Validators MUST report at minimum the following. Errors block compilation; warni
 | `E-FUNC-RECURSION` | error | 1 | a `def` calls itself directly or transitively | `def f(x) = f(x)` |
 | `E-FUNC-DUP` | error | 1 | two `def`s share a name | - |
 | `W-MEDIAN-DEFERRED` | warning | 1 only | `on_missing median` (treated `skip`) | |
-| `W-PERIOD-DEFERRED` | warning | 1 only | a non-annual `at` frequency while the implementation still runs single-frequency (no resampling yet) | `model m at monthly { ... }` |
 | `W-KIND-STOCK-FLOW` | warning | 1 | bare `stock`/`flow` division without `avg2`/`lag` | `income.cogs / balance.inventory` |
+| `E-FREQ-UNAVAILABLE` | error | 1 | no configured source provides the field at the requested frequency | `quarterly.income.revenue` on an annual-only source |
+| `E-FREQ-UNWIRED` | error | 1 (config) | a source advertises frequencies beyond its default but load() has no named `frequency=` parameter | |
+| `E-FIELD-UNSERVED` | error | 1 (config) | a referenced bare field that no configured source provides | `price.adj_close` on edgar |
+| `E-SOURCE-EMPTY` | error | 1 (config) | no configured source provides any requested field | |
+| `E-DIM-UNKNOWN` | error | 1 | a source declares an entity dimension the engine has no bridge for | |
+| `E-DIM-UNMAPPED` | error | 1 | a foreign-dimension source is configured but no entity source provides its bridge field | `gmd.*` without `meta.country` |
+| `E-DIM-AMBIGUOUS` | error | 1 | multiple foreign dimensions with no entity-bearing source | |
+| `E-BROADCAST-MIXED` | error | 1 | a panel mixes the `*` sentinel with real entities | |
+| `E-NO-ENTITY` | error | 1 | every source is a global broadcast series; nothing to compute on | |
+| `E-ENTITY-UNKNOWN` | error | 1 | an entity pin references an entity with no rows after fetch (§4.7) | `x @ entity("NOSUCH")` |
+| `E-AGG-UNKNOWN` | error | 1 | a literal aggregation name the engine does not know | `resample(x, "annual", "avg")` |
+| `E-FREQ-UNKNOWN` | error | 1 | a literal frequency name outside the ladder | `resample(x, "yearly", "sum")` |
+| `E-MODEL-CONTEXT` | error | 1 | `weighted_score()` anywhere but as a complete model-assignment RHS | `weighted_score() + 1` |
+| `E-UNIVERSE-CYCLE` | error | 1 | universe root chains form a cycle | `a = b where ...; b = a where ...` |
+| `E-PHASE-DEFERRED` | error | 1 | running a construct whose execution lands in a later phase | `run --model <strategy>` |
+| `W-UPSAMPLE-FLOW` | warning | 1 | (see above) | |
+| `W-GRID-COARSER` | warning | 1 | no source natively populates the target frequency; the grid keeps coarser resolution | `at daily` over annual-only sources |
 
 Reserved for future standardization: `E-TYPE-ORDER` (ordered comparison on strings), `E-ARG-STATIC` (non-literal window arguments).
 
@@ -908,14 +924,14 @@ meta_command: "?"            -> meta_catalog
 import_decl: "import" STRING
 func_def: "def" NAME "(" [NAME ("," NAME)*] ")" "=" expr
 universe_decl: "universe" NAME "=" dotted ("where" expr)?
-model_decl: "model" NAME ("on" NAME)? ("period" PERIOD)? "{" model_stmt+ "}"
+model_decl: "model" NAME ("on" NAME)? ("at" FREQ)? "{" model_stmt+ "}"
 ?model_stmt: "desc" STRING                  -> desc_stmt
            | "on_missing" POLICY            -> policy_stmt
            | "export" NAME "=" expr         -> export_stmt
            | "score" NAME "weight" NUMBER "{" score_case+ "else" NUMBER "}" -> score_stmt
            | NAME "=" expr                  -> assign_stmt
 score_case: NUMBER "if" expr        // value is a numeric literal (LALR-clean; avoids the ternary `if` conflict)
-signal_decl: "signal" NAME ("on" NAME)? ("period" PERIOD)? "=" expr
+signal_decl: "signal" NAME ("on" NAME)? ("at" FREQ)? "=" expr
 
 strategy_decl: "strategy" NAME "{" strat_field+ "}"
 ?strat_field: "universe" NAME | "signal" expr | "rebalance" FREQ
@@ -950,8 +966,7 @@ dotted: NAME ("." NAME)*
 CMP_OP: "==" | "!=" | ">=" | "<=" | ">" | "<"
 SUM_OP: "+" | "-"
 MUL_OP: "*" | "/" | "%"
-PERIOD: "annual" | "quarterly" | "monthly" | "daily"   // one terminal for model period and strategy rebalance; model semantics use annual/quarterly/monthly
-FREQ: PERIOD
+FREQ: "annual" | "quarterly" | "monthly" | "weekly" | "daily" | "hourly" | "minute"
 POLICY: "skip" | "zero" | "median"
 WEIGHTING: "equal" | "value" | "signal"
 NUMBER: /[0-9][0-9_]*(\.[0-9]+)?([eE][+-]?[0-9]+)?/
