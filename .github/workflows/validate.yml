@@ -16,6 +16,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install reference implementation
-        run: pip install "trail-lang @ git+https://github.com/trail-language/trail-py.git"
+        # Track trail-lang `main`: the spec documents unreleased features (erf/norm_ppf/ts_*, etc.),
+        # so the stdlib must validate against the current reference impl, not the last release.
+        run: pip install "trail-lang @ git+https://github.com/trail-language/trail-lang.git@main"
       - name: Validate stdlib against the reference implementation
         run: python scripts/validate_stdlib.py
