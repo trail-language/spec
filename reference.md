@@ -1,7 +1,7 @@
 # The Trail Language Reference
 
 **Version:** 1.0.0 · 2026-07-18
-**Status:** Normative. The 1.0 core is implemented and executes: expressions and built-ins (§7), user functions (`def`, §8.8), `universe`/`model`/`score`/`signal`, multi-source resolution with per-cell coalescing and the `@` field-reference qualifiers (§5, §6.3), point-in-time cross-frequency alignment (§4.4-§4.5), the temporal/calendar operators (§7.3), runtime configuration (§10), the data-source contract (§11), and the interactive dialect and discovery meta-commands (§1.3). Constructs that parse but whose *execution* is a post-1.0 extension point are labelled *(post-1.0)*: `strategy`/`backtest`/`learn` execution, `import` inclusion, cross-model export references, registered functions (§7.6, §11.5), the `@ asof`/`@ params` qualifiers, and provider vocabularies such as `bank.*` (§10.2, Appendix B). The data model is `(entity x time@frequency)`.
+**Status:** Normative. The 1.0 core is implemented and executes: expressions and built-ins (§7), user functions (`def`, §8.8), `universe`/`model`/`score`/`signal`, multi-source resolution with per-cell coalescing and the `@` field-reference qualifiers (§5, §6.3), point-in-time cross-frequency alignment (§4.4-§4.5), the temporal/calendar operators (§7.3), runtime configuration (§10), the data-source contract (§11), and the interactive dialect and discovery meta-commands (§1.3). Constructs that parse but whose *execution* is a post-1.0 extension point are labelled *(post-1.0)*: `strategy`/`backtest`/`learn` execution, cross-model export references, registered functions (§7.6, §11.5), the `@ asof`/`@ params` qualifiers, and provider vocabularies such as `bank.*` (§10.2, Appendix B). The data model is `(entity x time@frequency)`.
 
 This document is the authoritative specification of the Trail language: its lexical structure, data model, expression semantics, built-in functions, declarations, diagnostics, and runtime configuration.
 
@@ -49,8 +49,8 @@ The 1.0 core is a complete, executing language. Everything below is normative an
 
 | Status | Constructs |
 |---|---|
-| **1.0 (normative, executes)** | expressions and built-ins (§7); user-defined functions (`def`, §8.8); `universe`, `model`, `score`, `signal`; the frequency ladder and cross-frequency alignment at every context (`annual`/`quarterly`/`monthly`/…, §4.4); the point-in-time known-date model (§4.5); multi-source resolution - precedence chains, per-cell coalescing, and the `@ source` / `@ entity` / `@ align` field-reference qualifiers (§5, §6.3); the temporal/calendar operators (§7.3); `ttm`/`trailing`/`to_*`/`resample`/`asof` frequency transforms (§7.7); runtime config (§10); the data-source contract (§11); the interactive dialect and discovery meta-commands (§1.3); `strategy`/`backtest`/`learn`/`import` **parse** without execution |
-| **post-1.0 (extension point)** | `strategy`/`backtest` execution (gates, fallback sleeves, exposure); `learn` execution and weight tables; `import` textual inclusion; cross-model export references (`MODEL.export`); registered functions (§7.6, §11.5); the `@ asof` and `@ params(...)` qualifiers and provider vocabularies such as `bank.*` (§10.2, Appendix B); `sply`, `roll_tail_mean`; execution semantics of `on_missing median` (parses; treated as `skip`, `W-MEDIAN-DEFERRED`) |
+| **1.0 (normative, executes)** | expressions and built-ins (§7); user-defined functions (`def`, §8.8); `universe`, `model`, `score`, `signal`; the frequency ladder and cross-frequency alignment at every context (`annual`/`quarterly`/`monthly`/…, §4.4); the point-in-time known-date model (§4.5); multi-source resolution - precedence chains, per-cell coalescing, and the `@ source` / `@ entity` / `@ align` field-reference qualifiers (§5, §6.3); the temporal/calendar operators (§7.3); `ttm`/`trailing`/`to_*`/`resample`/`asof` frequency transforms (§7.7); runtime config (§10); the data-source contract (§11); the interactive dialect and discovery meta-commands (§1.3); `import` source-level inclusion (§8.1); `strategy`/`backtest`/`learn` **parse** without execution |
+| **post-1.0 (extension point)** | `strategy`/`backtest` execution (gates, fallback sleeves, exposure); `learn` execution and weight tables; cross-model export references (`MODEL.export`); registered functions (§7.6, §11.5); the `@ asof` and `@ params(...)` qualifiers and provider vocabularies such as `bank.*` (§10.2, Appendix B); `sply`, `roll_tail_mean`; execution semantics of `on_missing median` (parses; treated as `skip`, `W-MEDIAN-DEFERRED`) |
 
 An implementation MUST reject a construct it cannot execute using the diagnostics of §9 - never by silently ignoring it. Attempting to *execute* a parse-only construct raises `E-PHASE-DEFERRED`; a call to an unimplemented function name is `E-FUNC-UNKNOWN`.
 
@@ -161,7 +161,7 @@ Schema fields are addressed by dotted path. Standard namespaces:
 | Namespace | Content | Examples |
 |---|---|---|
 | `income.*` | income-statement items | `revenue`, `operating_income`, `eps_diluted`, `interest_expense` |
-| `balance.*` | balance-sheet items | `total_assets`, `total_debt`, `retained_earnings`, `inventory` |
+| `balance.*` | balance-sheet items | `total_assets`, `total_debt`, `retained_earnings`, `inventory`, `other_current_assets` |
 | `cash.*` | cash-flow items | `cfo`, `capex`, `free_cash_flow`, `stock_issued` |
 | `price.*` | market data, PIT-aligned (§4.4) | `adj_close`, `dividends`, `return`, `volume` |
 | `meta.*` | classification and listing data | `sector`, `exchange`, `market_cap`, `is_active`, `country` |
@@ -470,6 +470,8 @@ beta_blume = 0.67 * beta_36m + 0.33
 
 **`cummax(x)` / `cumsum(x)` / `cumprod(x)` / `cummin(x)`** - expanding max/sum/product/min from each entity's first period (causal; the building blocks for discrete integrals and compounding).
 
+**`ts_mean(x)` / `ts_std(x)` / `ts_min(x)`** - **whole-series** reducers: collapse each entity's entire time axis to one value (mean / sample std, ddof = 1 / minimum) and broadcast it back to every row of that entity. Distinct from the windowed `roll_*` (a trailing window of `n` periods) and the expanding `cum*` (a causal prefix): these see the *whole* per-entity series at once, so they are **not point-in-time causal** and are meant for retrospective per-entity summaries (e.g. the annualized-Sharpe / drawdown risk defs of the standard library, §8.8), not for look-ahead-safe features inside a live decision.
+
 **`roll_median(x, n)` / `roll_skew(x, n)`** - rolling median and skewness over a trailing window.
 
 **`ewm_mean(x, span)` / `ewm_std(x, span)`** - exponentially-weighted moving mean / std (decay recurrence; the standard EWMA volatility estimator).
@@ -563,9 +565,14 @@ Because `xs_*` values depend on the entire group, changing universe membership c
 | `min(a, b)` / `max(a, b)` | cell-wise pair min/max | `min(r - target, 0)` (downside leg) |
 | `sin`/`cos`/`tan`, `asin`/`acos`/`atan(x)` | trigonometry (radians) - transcendental primitives | |
 | `floor`/`ceil`/`round(x)` | round to integer | |
-| `count(b1, …, bk)` | sum of boolean panels as integers (k ≥ 1); null flags propagate null (§4.3) | Piotroski: `count(f1, …, f9)` |
+| `erf(x)` | Gauss error function (rational Abramowitz-Stegun 7.1.26 approximation, \|err\| ≤ 1.5e-7); odd, `erf(0) = 0` | the primitive behind the derived `normal_cdf` (§8.8) |
+| `norm_ppf(p)` | inverse standard-normal CDF / probit (Acklam approximation, rel err ≈ 1e-9 in the central region); `p ≤ 0 → −inf`, `p ≥ 1 → +inf` | `z_target = norm_ppf(pctile)` |
+| `count(b1, …, bk)` | sum of boolean panels as integers (k = 1..99); **null-propagating** - any null flag nulls the whole count (§4.3 rule 1) | Piotroski: `count(f1, …, f9)` |
+| `count_true(b1, …, bk)` | count of true flags treating null as false (k = 1..99); the **null-tolerant** complement of `count` | `count_true(f1, …, f9)` scores present flags |
 
-Bare-literal arguments to these scalar functions are lifted to constants (`log(10)` is valid). Non-transcendental scalar helpers (`log10`, `sigmoid`, `sign`, `hypot`, `signed_log`, …) are **derived** functions in the standard library (§8.8), not primitives.
+Bare-literal arguments to these scalar functions are lifted to constants (`log(10)` is valid). Non-transcendental scalar helpers (`log10`, `sigmoid`, `sign`, `hypot`, `signed_log`, `pow`, `normal_cdf`, …) are **derived** functions in the standard library (§8.8), not primitives.
+
+`count` and `count_true` differ only in how they treat a missing flag: `count` follows the arithmetic null rule (a single null nulls the result), so a checklist over a field a company simply lacks becomes null unless each flag is guarded (`(cash.stock_issued ?? 0) == 0`); `count_true` folds null to false instead, so present evidence still accumulates. Choose `count` when a missing input should invalidate the tally, `count_true` when it should count as "not met".
 
 **Temporal (calendar) functions.** These primitives operate on a **datetime** value - the panel atom `time` (§6.2), a source date column inside an `@ align(…)` override (§6.3), or any datetime-typed field. They serve double duty: general calendar factors in a model (seasonality, "is Q4", fiscal-vs-calendar offsets) and the reduction inside an alignment-coordinate override.
 
@@ -644,13 +651,19 @@ The **aggregation library** supplies the `agg` argument (the reduction applied t
 
 A program is one or more declarations. Universe/model/signal/strategy names share one program-level namespace; redeclaring a name is `E-NAME-REBOUND`. Declaration order does not matter for cross-declaration references; assignment order matters *within* a model.
 
-### 8.1 `import` *(inclusion: post-1.0)*
+### 8.1 `import`
 
 ```trail
 import "metrics/base.trail"
 ```
 
-Textual inclusion relative to the importing file; the included declarations behave as if written in place. Import cycles are `E-IMPORT-CYCLE`; importing the same file twice along different paths is permitted and idempotent.
+**Source-level inclusion.** An `import` pulls the **reusable, non-executing** top-level declarations of another file - its `def`s and `universe`s - into the importing program as if written in place, before macro-expansion (so imported `def`s are inlinable and imported universes are referenceable). A file's **execution units** - `model`, `signal`, `strategy`, `backtest`, `learn` - are *not* imported: they are the file's own outputs, skipped on import so a file can be both directly runnable and importable as a library. This is how the bundled standard library and user libraries (§8.8) reach a program.
+
+- **Path resolution.** The string is a filesystem path resolved **relative to the importing file's directory** (raw source with no path falls back to the working directory). Nested imports resolve relative to the file that wrote them.
+- **Transitive.** An imported file may itself import; the full graph is gathered, transitive imports first.
+- **Deduped.** The same file reached along more than one path is included **once** (idempotent diamond imports); resolution is by canonical path.
+
+Diagnostics: an import path that resolves to no file is `E-IMPORT-NOT-FOUND`; an import cycle is `E-IMPORT-CYCLE`; an imported `def`/`universe` whose name collides with a standard-library definition, a definition in the importing file, or a definition from another imported file is `E-IMPORT-DUP` (deduped re-inclusion of the *same* file is not a collision). Because inclusion is resolved in the front-door pipeline before validation, these surface from `trail validate` as well as `trail run`.
 
 ### 8.2 `universe`
 
@@ -683,6 +696,15 @@ Defaults: `at annual`; `on_missing skip`. `on` may be omitted when the program d
 **Assignments** - `name = expr` binds a panel visible to *later* statements in the same model. Top-to-bottom scoping; forward references are `E-NAME-UNDEFINED`; rebinding is `E-NAME-REBOUND`.
 
 **`export name = expr`** - an assignment that is also materialized: it appears in the model's output and (post-1.0) is addressable program-wide as `MODEL.name`. Exports are the model's only externally visible effect.
+
+**`export name`** (bare, no RHS) - surfaces an **already-defined local** as a same-named export, without recomputing or renaming it. It is the "promote this intermediate to output" form, letting a model compute with plain assignments and choose its output surface at the end:
+
+```trail
+roa = income.net_income / avg2(balance.total_assets)
+export roa                                   # promote the existing local to an export
+```
+
+A bare `export` references a name; it does **not** bind one. Naming a local not defined earlier in the model is `E-EXPORT-UNDEFINED`; because it introduces no new binding, it does **not** trip `E-NAME-REBOUND` (that rule governs re-*assignment*, §8.3). `export name = expr` is unchanged and still both binds and materializes.
 
 **`score name weight N { … }`** - ordered, first-match-wins cases ending in a mandatory `else`:
 
@@ -738,6 +760,8 @@ signal value_composite on nonfin at annual =
 ```
 
 is equivalent to `model value_composite on nonfin at annual { export value_composite = … }`.
+
+A `signal` is **executable**: it compiles (via the engine's `compile_signal`) to a one-export, score-free model and runs to a per-`(entity, time)` series. The CLI runs one directly with `trail signal PATH --name NAME` (§10.2).
 
 ### 8.5 `strategy` *(execution: post-1.0)*
 
@@ -856,8 +880,9 @@ A `def` binds a **non-recursive expression macro**. It is not a runtime function
 5. **Hygiene.** Substitution replaces only parameter references; a function body does not capture names from the caller's model scope.
 6. **Static-argument propagation (I3).** A parameter that flows into a window/quantile position must receive a numeric literal at the call site, so the inlined expression still has static windows.
 7. **Definition sites.** `def`s are top-level declarations valid in a model file or a library file; they are removed from the program once inlined. The bundled standard library and user libraries are `.trail` files of `def`s brought in by `import` (§8.1).
+8. **Call-site `by` propagates into the body.** A `by <field>` on a `def` **call** (the same trailing `by` any call may carry, §7.2) is threaded into **every cross-sectional op inside the inlined body that has no `by` of its own**; an inner op that already names its own group keeps it, and time-series/elementwise ops ignore grouping. The group scopes to the def's own reducers only - it does **not** leak into the caller's argument expressions (mirroring how a `by` on a built-in binds to that op, not to its operands). So `robust_zscore(x) by meta.sector` groups the `xs_median`/`xs_mad` reducers *inside* `robust_zscore` by sector, while any cross-sectional op appearing in `x` is left ungrouped.
 
-Because the derived layer is expressible this way, most of the function catalog - financial ratios, `beta`/`yoy`/`avg2`, hyperbolics, `sigmoid`/`signed_log`, finite-difference calculus, robust/rolling statistics, published factors - is Trail source in the standard library rather than engine code; the engine carries only the primitives (§7) and registered functions (§7.6). The bundled library ships as `stdlib/{math,stats,transform,calculus,geometry,factor,timeseries,core}.trail` and is **implicitly loaded** by the pipeline (the CLI `--no-stdlib` opts out); `docs/function-catalog.md` classifies the full surface (primitive / derived / registered). The `timeseries` module holds the derived operators migrated out of the engine (`yoy`, `avg2`, `cagr`, `beta`, `pctile`, …); `factor` holds the cross-sectional factor toolkit (`ntile`, `scale`, `neutralize`, `xs_corr`, …). Discovery (§1.3) tags each function `primitive` or `derived`.
+Because the derived layer is expressible this way, most of the function catalog - financial ratios, `beta`/`yoy`/`avg2`, hyperbolics, `sigmoid`/`signed_log`, finite-difference calculus, robust/rolling statistics, published factors, per-entity risk metrics - is Trail source in the standard library rather than engine code; the engine carries only the primitives (§7) and registered functions (§7.6). The bundled library ships as `stdlib/{math,stats,transform,calculus,geometry,factor,timeseries,risk,core}.trail` and is **implicitly loaded** by the pipeline (the CLI `--no-stdlib` opts out); `docs/function-catalog.md` classifies the full surface (primitive / derived / registered). The `timeseries` module holds the derived operators migrated out of the engine (`yoy`, `avg2`, `cagr`, `beta`, `pctile`, …); `factor` holds the cross-sectional factor toolkit (`ntile`, `scale`, `neutralize`, `xs_corr`, …); the `risk` module holds per-entity return-series metrics (`max_drawdown`, `ann_sharpe`, `sortino`, `calmar`) built on the whole-series reducers (§7.1). Discovery (§1.3) tags each function `primitive` or `derived`.
 
 ---
 
@@ -872,6 +897,7 @@ Validators and the runtime MUST report at minimum the following. Errors block co
 | `E-FUNC-ARITY` | error | static | wrong positional-argument count (built-in, `@ align`, or a `def` macro; a `def` also rejects keyword args) | `lag(x)` |
 | `E-NAME-UNDEFINED` | error | static | a bare name used before assignment in its model (and not `time`/`entity`) | `a = b + 1` with no `b` |
 | `E-NAME-REBOUND` | error | static | a name reused within a model, or a duplicate top-level declaration | two `model quality` decls |
+| `E-EXPORT-UNDEFINED` | error | static | a bare `export NAME` (no RHS) names no local defined earlier in the model | `export roa` with no `roa` |
 | `E-FWD-CONTEXT` | error | static | `fwd_return` outside `learn.target` | `a = fwd_return(12m)` |
 | `E-MODEL-CONTEXT` | error | static | `weighted_score()` anywhere but as the complete RHS of a model assignment | `weighted_score() + 1` |
 | `E-UNIVERSE-UNKNOWN` | error | static | `on` names an undeclared universe (or is omitted with ≠1 universe), or a universe root is unknown | `model m on nowhere` |
@@ -884,6 +910,9 @@ Validators and the runtime MUST report at minimum the following. Errors block co
 | `E-ALIGN-DTYPE` | error | load | an `@ align(…)` expression does not evaluate to a datetime coordinate | `@ align(year(filing_date))` |
 | `E-FUNC-RECURSION` | error | static | a `def` calls itself directly or transitively | `def f(x) = f(x)` |
 | `E-FUNC-DUP` | error | static | two `def`s share a name | - |
+| `E-IMPORT-NOT-FOUND` | error | static | an `import` path resolves to no file (relative to the importing file) | `import "nope.trail"` |
+| `E-IMPORT-CYCLE` | error | static | `import`s form a cycle | `a.trail` imports `b.trail` imports `a.trail` |
+| `E-IMPORT-DUP` | error | static | an imported `def`/`universe` name collides with a stdlib, importing-file, or other-import definition | two imports each defining `def f` |
 | `E-SOURCE-NAME` | error | config | a source name not matching `^[A-Za-z0-9_-]+$` (would break the `#source` codec tag) | `sources: { a.b: … }` |
 | `E-SOURCE-UNKNOWN` | error | config | a `precedence` chain names an undeclared source | `precedence.default: [nosuch]` |
 | `E-SOURCE-DRIVER` | error | config | a `driver` neither a registered `trail.sources` name nor a resolvable dotted path | `driver: nosuch` |
@@ -908,7 +937,7 @@ Validators and the runtime MUST report at minimum the following. Errors block co
 | `W-GRID-COARSER` | warning | load | no source natively populates the target frequency; the grid keeps coarser resolution | `at daily` over annual-only sources |
 | `W-PIT-PARTIAL` | warning | load | some rows carry no known-date coordinate; those are placed at period-end (naive) | |
 
-A **score** case/else value that is not a numeric literal is a plain **syntax error** (the grammar requires `NUMBER`, §12); no diagnostic code is emitted for it. Reserved for future standardization and not currently emitted: `E-TYPE-ORDER` (ordered comparison on strings), `E-ARG-STATIC` (non-literal window arguments), and `E-IMPORT-CYCLE` (reserved for the post-1.0 `import` inclusion). Codes present in pre-1.0 drafts and now **removed**: `E-PIN-UNSUPPORTED` (source pins execute), `E-DIM-UNKNOWN` (the dimension bridge is source-declared, §5.4), and `E-FREQ-UNWIRED`.
+A **score** case/else value that is not a numeric literal is a plain **syntax error** (the grammar requires `NUMBER`, §12); no diagnostic code is emitted for it. Reserved for future standardization and not currently emitted: `E-TYPE-ORDER` (ordered comparison on strings) and `E-ARG-STATIC` (non-literal window arguments). Codes present in pre-1.0 drafts and now **removed**: `E-PIN-UNSUPPORTED` (source pins execute), `E-DIM-UNKNOWN` (the dimension bridge is source-declared, §5.4), and `E-FREQ-UNWIRED`.
 
 ---
 
@@ -960,7 +989,7 @@ The **target frequency** is not a config key: it comes from each `model`/`signal
 8. **Frequency alignment.** Each source declares its native frequency and any additional `frequencies` (its `Capabilities`). The runtime aligns every source panel to the model's target frequency (§4.4) - downsample by kind or upsample by as-of, placing by each field's known-date coordinate (§4.5) - and merges the aligned panels on `(entity, time)`.
 9. **Point-in-time.** `panel.pit` is `auto` (default) or `naive` (a value outside that set is a config error). `auto` places each value by its known-date coordinate where a source supplies one; `naive` ignores all coordinates and places every value at its period-end. A single source may override globally-`auto` placement with the source option `options.pit: naive`. (`options.pit_lag`, where present, is an adapter-level convention: the adapter synthesizes a known-date = period-end + lag for a source that has none; it is not interpreted by the core config.)
 10. **`panel.periods`** bounds the `time` axis after loading (years or ISO dates); under `panel.pit: auto` this is the **decision** calendar (§4.5). It does not change PIT semantics.
-11. `trail validate` is config-free (pure static analysis); only `trail run`/`backtest` read the config.
+11. **CLI verbs.** `trail validate PATH` is config-free (pure static analysis) and `trail catalog [target]` reads only the registries (§1.3); the data-binding verbs read the config: `trail run PATH --model M [--config C] [--out …]` runs a model, `trail signal PATH --name N [--config C] [--out …]` runs a `signal` to its `(entity, time, N)` series (§8.4), and `trail describe PATH [--config C] [--model M] [--field F]` is a **discoverability** tool - it loads the configured sources and reports the available fields grouped by namespace and, for **low-cardinality categorical** fields, their distinct observed values with row counts (verbatim, unnormalized), answering "which `sector`/`exchange` strings does this source actually emit?" so an author can write a correct provider-specific expression. `--model` scopes `describe`'s panel to a model and its bound universe; `--field` narrows to one field. All data-binding verbs accept `--no-stdlib`. (`backtest` execution is post-1.0.)
 
 ---
 
@@ -1112,7 +1141,7 @@ universe_decl: "universe" NAME "=" dotted ("where" expr)?
 model_decl: "model" NAME ("on" NAME)? ("at" FREQ)? "{" model_stmt+ "}"
 ?model_stmt: "desc" STRING                  -> desc_stmt
            | "on_missing" POLICY            -> policy_stmt
-           | "export" NAME "=" expr         -> export_stmt
+           | "export" NAME ("=" expr)?      -> export_stmt   // bare `export NAME` surfaces an existing local (§8.3)
            | "score" NAME "weight" NUMBER "{" score_case+ "else" NUMBER "}" -> score_stmt
            | NAME "=" expr                  -> assign_stmt
 score_case: NUMBER "if" expr
@@ -1161,7 +1190,7 @@ weight weighting weights where zero
 
 ## Appendix B - Extension points and deferred-construct behavior
 
-**Live in 1.0.** Source pins (`@ source`), `@ entity(...)`, and `@ align(...)` execute (§6.3); `ttm`/`trailing`/`to_*`/`resample`/`asof` and the temporal operators (§7.3) execute; multi-source precedence chains, per-cell coalescing, and the point-in-time known-date model execute.
+**Live in 1.0.** Source pins (`@ source`), `@ entity(...)`, and `@ align(...)` execute (§6.3); `ttm`/`trailing`/`to_*`/`resample`/`asof` and the temporal operators (§7.3) execute; multi-source precedence chains, per-cell coalescing, and the point-in-time known-date model execute; `import` source-level inclusion executes (§8.1 - imported `def`s/`universe`s are brought in; execution units are skipped).
 
 **Post-1.0 extension points** (specified, not yet implemented). An implementation MUST behave as follows until each lands:
 
@@ -1170,7 +1199,7 @@ weight weighting weights where zero
 - **`sply`, `roll_tail_mean`, registered functions** → `E-FUNC-UNKNOWN`.
 - **`on_missing median`** → parses; `W-MEDIAN-DEFERRED` (treated `skip`).
 - **Cross-model export references** (`MODEL.export`) → `E-FIELD-UNKNOWN`.
-- **`import` inclusion, `strategy`/`backtest`/`learn` execution** → parse; attempting to *execute* them exits with `E-PHASE-DEFERRED`.
+- **`strategy`/`backtest`/`learn` execution** → parse; attempting to *execute* them exits with `E-PHASE-DEFERRED`.
 - **Editorial polish** (does not affect conforming programs): splitting a field's `kind` from its physical `dtype`, and publishing the diagnostic set of §9 as a machine-readable error-code registry.
 
 ## Appendix C - Complete annotated example

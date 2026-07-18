@@ -50,12 +50,12 @@ See [`function-catalog.md`](function-catalog.md) for the full classification.
 
 **Version 1.0.0.** The 1.0 core is normative and executes: expressions and built-ins,
 `universe` / `model` / `score` / `signal`, user-defined functions, the standard library,
-multi-source resolution with per-cell coalescing and the `@` field-reference qualifiers
-(`@ source` / `@ entity` / `@ align`), point-in-time cross-frequency alignment, the temporal
-operators, the data-source contract, and runtime configuration. `strategy` / `backtest` /
-`learn` execution, `import` inclusion, the `@ asof` / `@ params` qualifiers, and registered
-functions parse-or-are-reserved as post-1.0 extension points (see §1.2 and Appendix B in
-[`reference.md`](reference.md)).
+`import` source-level inclusion, multi-source resolution with per-cell coalescing and the
+`@` field-reference qualifiers (`@ source` / `@ entity` / `@ align`), point-in-time
+cross-frequency alignment, the temporal operators, the data-source contract, and runtime
+configuration. `strategy` / `backtest` / `learn` execution, the `@ asof` / `@ params`
+qualifiers, and registered functions parse-or-are-reserved as post-1.0 extension points
+(see §1.2 and Appendix B in [`reference.md`](reference.md)).
 
 ## License
 

@@ -33,7 +33,7 @@ universe_decl ::= "universe" NAME "=" dotted ( "where" expression )?
 model_decl    ::= "model" NAME ( "on" NAME )? ( "at" FREQ )? "{" model_stmt+ "}"
 model_stmt    ::= "desc" STRING
                 | "on_missing" POLICY
-                | "export" NAME "=" expression
+                | "export" NAME ( "=" expression )?   (* bare `export NAME` surfaces an existing local *)
                 | "score" NAME "weight" NUMBER "{" score_case+ "else" NUMBER "}"
                 | NAME "=" expression
 score_case    ::= NUMBER "if" expression
