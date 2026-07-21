@@ -156,28 +156,27 @@ Broadcast series occupy the same domain with a constant entity axis. `macro.risk
 
 ### 4.2 Fields, namespaces, kinds
 
-Schema fields are addressed by dotted path. Standard namespaces:
+Fields are addressed by dotted path (`<namespace>.<field>`). **The language ships no field vocabulary of its own** beyond the shared `meta.*` coordination namespace: every other field is **declared by a data source**, which owns its namespace and chooses its own field names (§5, §10.2). Installing a source contributes its vocabulary through the `trail.schema` mechanism; contributed fields validate, appear in the catalog, and resample by kind exactly like `meta.*`.
 
-| Namespace | Content | Examples |
+| Namespace | Owner | Content |
 |---|---|---|
-| `income.*` | income-statement items | `revenue`, `operating_income`, `eps_diluted`, `interest_expense` |
-| `balance.*` | balance-sheet items | `total_assets`, `total_debt`, `retained_earnings`, `inventory`, `other_current_assets` |
-| `cash.*` | cash-flow items | `cfo`, `capex`, `free_cash_flow`, `stock_issued` |
-| `price.*` | market data, PIT-aligned (§4.4) | `adj_close`, `dividends`, `return`, `volume` |
-| `meta.*` | classification and listing data | `sector`, `exchange`, `market_cap`, `is_active`, `country` |
-| `index.*` | index-level broadcast series | `spx.close`, `spx.return`, `spx.eps` |
-| `macro.*` | macro broadcast series | `risk_free`, `treasury_10y`, `cpi` |
-| `estimates.*` | analyst estimates (PIT-legal, §4.5) | `eps_fwd`, `eps_growth_fwd`, `revision_score` |
-| `insider.*`, `ownership.*`, `sentiment.*`, `attention.*` | event-derived panels, pre-aggregated by the data layer | `insider.net_buy_value_6m`, `ownership.short_interest_pct` |
+| `meta.*` | **the language** (shared coordination) | `sector`, `exchange`, `market_cap`, `is_active`, `country` — entity classification/listing that several sources may provide. `meta.country` is the cross-source **bridge key** (§5.4). |
+| `<source>.*` | **each data source** | whatever that source declares — e.g. `edgar.revenue`, `fmp.gross_margin`, `gmd.infl`. The namespace is the source's own name; two sources serving the same concept do so under **distinct** paths (`edgar.revenue` vs `fmp.revenue`), addressed and combined explicitly (§5.1). |
 
-Every field carries a **kind** that identifies its measure and - crucially - **how it aggregates when its frequency changes** (§4.4). Built-in kinds and their default downsample rule: `flow` (income/cash items, summable across periods -> **sum**), `stock`/`level`/`price` (point-in-time snapshots -> **last**), `rate`/`ratio` (-> **mean**), `index` (CPI, REER -> **last**), `return` (period returns -> **compound**), `per_share` (-> **sum**), `meta` (categorical -> **last**), plus `days`, `count`. Kinds also drive `ttm`/`avg2` behavior and lint diagnostics; kind violations are warnings, not errors - the canonical example:
+There is **no built-in canonical statement schema**. Where the examples in this reference write statement-style names (`income.revenue`, `balance.total_assets`, …) they denote fields provided by *some* configured source, or by a user **canonical library** — a file of zero-arg `def`s that coalesces sources into stable names, imported per §8.1:
+
+```trail
+def revenue() = edgar.revenue ?? fmp.revenue    # canonical, user-defined; not a language built-in
+```
+
+Every field carries a **kind** — declared by its source (or, for `meta.*`, by the language) — that identifies its measure and - crucially - **how it aggregates when its frequency changes** (§4.4). Common kinds and their default downsample rule: `flow` (summable across periods -> **sum**), `stock`/`level`/`price` (point-in-time snapshots -> **last**), `rate`/`ratio` (-> **mean**), `index` (CPI, REER -> **last**), `return` (period returns -> **compound**), `per_share` (-> **sum**), `meta` (categorical -> **last**), plus `days`, `count`. Kinds also drive `ttm`/`avg2` behavior and lint diagnostics; kind violations are warnings, not errors - the canonical example:
 
 ```trail
 inventory_turnover = income.cogs / balance.inventory          # W-KIND-STOCK-FLOW
 inventory_turnover = income.cogs / avg2(balance.inventory)    # clean: flow over averaged stock
 ```
 
-The vocabulary is **extensible**: a data-source package contributes its own namespace and kinds (e.g. `gmd.*` macro fields) through the `trail.schema` mechanism (§10.2). Contributed fields validate, appear in the catalog, and resample by kind exactly like built-ins; kinds are freeform strings, and only `flow`/`stock` carry the stock-flow lint.
+Kinds are **freeform strings** — a source declares whatever kind each field carries — and only `flow`/`stock` carry the stock-flow lint.
 
 ### 4.3 Null semantics
 
@@ -308,31 +307,35 @@ The pin is **generic**: any field, at any frequency qualifier (`daily.price.adj_
 
 ## 5. Source resolution
 
-Trail decouples *what* a field means (the canonical schema) from *where* its values come from (data sources such as FMP, SEC EDGAR, stockanalysis). A source implements the **data-source contract** (§11): it declares the fields it serves (`available_fields`), describes itself (`capabilities`), and turns a request into an `(entity × time)` panel (`load`). Discovery is mandatory - a source cannot participate without saying what it provides - which is what makes the routing and coalescing below well-defined.
+Trail separates *addressing* a field (a dotted path) from *providing* it (a data source). There is **no built-in canonical schema**: each source **declares its own namespace, field names, and kinds** (§4.2, §10.2). A source implements the **data-source contract** (§11): it declares the fields it serves (`available_fields`), describes itself (`capabilities`), and turns a request into an `(entity × time)` panel (`load`). Discovery is mandatory - a source cannot participate without saying what it provides - which is what makes the routing and coalescing below well-defined.
+
+Because domain fields are **source-owned** (`edgar.revenue`, `fmp.revenue` are distinct paths), combining the same concept across sources is **explicit** — the `??` coalescing operator (§4.3), a `@ source` pin (§5.2), or a canonical library of `def`s (§4.2). The **precedence + per-cell coalescing** described next applies to fields that *several sources publish under the same path* — chiefly the shared `meta.*` coordination namespace.
 
 ### 5.1 Unqualified fields: namespace precedence and per-cell coalescing
 
-An unqualified field (`income.revenue`) routes through the runtime **precedence configuration** (§10). Precedence maps a **namespace** - a field's *first dotted segment* (`income.revenue` -> `income`) - to an ordered chain of source names, falling back to the required `default` chain when the namespace has no entry of its own.
+An unqualified field routes through the runtime **precedence configuration** (§10). Precedence maps a **namespace** - a field's *first dotted segment* (`meta.sector` -> `meta`, `edgar.revenue` -> `edgar`) - to an ordered chain of source names, falling back to the required `default` chain when the namespace has no entry of its own.
 
-Every source in the field's chain that actually serves the field contributes, and the field **coalesces per `(entity, period)` cell**: the value is the first non-null down the chain, in chain order. A field that only one chain source serves is that source's column unchanged; a field no chain source serves is `E-FIELD-UNSERVED`.
+Every source in the field's chain that actually serves the field contributes, and the field **coalesces per `(entity, period)` cell**: the value is the first non-null down the chain, in chain order. A field that only one chain source serves - the usual case for a **source-owned** path like `edgar.revenue`, which only `edgar` publishes - is that source's column unchanged. A field no chain source serves is `E-FIELD-UNSERVED`. Per-cell coalescing therefore bites only where **several sources publish the same path**, chiefly the shared `meta.*`.
 
-Example with `precedence: { income: [edgar, fmp], default: [fmp] }` - EDGAR covers 2015-2023, FMP covers 2015-2024:
+Example with `precedence: { default: [edgar, fmp] }`, where both sources publish `meta.sector`:
 
-| cell | EDGAR | FMP | `income.revenue` resolves to |
+| cell | EDGAR | FMP | `meta.sector` resolves to |
 |---|---|---|---|
-| (AAA, 2023) | 121.0 | 120.8 | 121.0 (EDGAR first) |
-| (AAA, 2024) | null (not yet in EDGAR) | 133.1 | 133.1 (falls through to FMP) |
+| (AAA, 2023) | "Tech" | "Technology" | "Tech" (EDGAR first) |
+| (AAA, 2024) | null | "Technology" | "Technology" (falls through to FMP) |
 | (BBB, 2023) | null | null | null (neither source has it) |
+
+To coalesce a concept sources publish under **different** paths (`edgar.revenue` vs `fmp.revenue`), do it **explicitly** with `??` or a canonical `def` (§4.2): `edgar.revenue ?? fmp.revenue`.
 
 Coalescing composes with point-in-time (§4.5): each source's cell is filled only once its own known-date makes the value visible, so an EDGAR cell still blank because the value is not yet knowable there falls through to FMP under FMP's own coordinate. Coalescing across sources of **different entity dimensions** (§5.4) is illegal - `E-COALESCE-DIM-MIXED`; pin one source or split the chain by dimension. Entity pins and dimension bridges are always first-provider, never coalesced.
 
 ### 5.2 Pinned fields (`@ source`)
 
-A **source pin** reads exactly one configured source and **skips coalescing**. It is written as a bare source name after `@`: `income.revenue @ edgar` resolves from exactly the source named `edgar`; cells that source lacks are null. Pins bind tighter than every binary operator and apply only to a schema field reference:
+A **source pin** reads exactly one configured source and **skips coalescing**. It is written as a bare source name after `@`: `meta.sector @ fmp` reads `meta.sector` from exactly the source named `fmp`; cells that source lacks are null. Its purpose is **shared** paths (`meta.*`) that several sources publish - a source-owned path like `edgar.revenue` already names its source, so no pin is needed. Pins bind tighter than every binary operator and apply only to a schema field reference:
 
 ```trail
-rev_gap = abs(income.revenue @ fmp - income.revenue @ edgar)
-        / (income.revenue @ edgar ?? income.revenue @ fmp)      # source-disagreement forensics
+rev_gap = abs(fmp.revenue - edgar.revenue)
+        / (edgar.revenue ?? fmp.revenue)      # source-disagreement forensics (address each source's path)
 ```
 
 `(a + b) @ fmp` is a syntax error - pin the fields, not the arithmetic. A source pin is one of the mutually-exclusive `@` qualifiers (§6.3): a field reference carries at most one `@` qualifier, and a source pin does not combine with an entity pin. The frequency prefix composes with it (`annual.income.revenue @ edgar`).
@@ -984,7 +987,7 @@ The **target frequency** is not a config key: it comes from each `model`/`signal
 3. **Precedence and coalescing.** `precedence` maps a **namespace** - a field's first dotted segment - to an ordered source chain. `precedence.default` is required (inferred as "all declared sources, declaration order" only when `precedence` is entirely absent, e.g. the built-in default config). A namespace with no chain of its own falls back to `default`. Every source named in any chain MUST exist under `sources` (`E-SOURCE-UNKNOWN`). A field served by more than one source in its chain **coalesces per `(entity, period)` cell** - first non-null in chain order (§5.1); a field no chain source serves is `E-FIELD-UNSERVED`. Coalescing across sources of different entity dimensions is `E-COALESCE-DIM-MIXED`.
 4. **Secrets** are referenced by environment-variable name (`api_key_env`); configurations containing literal secrets SHOULD be rejected by tooling.
 5. **Panel conformance.** A returned panel MUST carry `entity` and `time` columns; their absence is always `E-SOURCE-PANEL` (nothing can be coerced). Other deviations - a missing requested field, a `time` not typed as a timestamp, a reserved `__date:*` date column with a non-temporal dtype, or a column outside the active schema - are `E-SOURCE-PANEL` under `panel.strict: true`, otherwise `W-SOURCE-PANEL` with coercion: unknown columns are dropped, `time` (and any `__date:*` coordinate) is cast to the canonical period-end `Datetime`, and missing requested fields are added as all-null columns. Reserved `__date:*` columns (§11.3) pass through conformance. `panel.strict` defaults to `false`; production configurations SHOULD set it `true`.
-6. **Pluggable schema.** A source package MAY extend the canonical field vocabulary by contributing fields under the `trail.schema` entry-point group; each entry point resolves to a mapping of dotted column to kind (e.g. `{"gmd.rGDP": "level", "gmd.infl": "rate"}`). Contributions merge with the built-in fields into the *active schema* (built-in wins on collision) that validation, `trail catalog`, and panel conformance use. Field kinds are freeform strings identifying the measure (`level`, `rate`, `index`, `ratio`, ...); only `flow` and `stock` carry special meaning (the `W-KIND-STOCK-FLOW` lint). Contributing the vocabulary is independent of a source instance advertising which of those fields it actually serves (the discovery capability). This is the mechanism by which a provider package adds a domain vocabulary (§10 note; Appendix B).
+6. **Pluggable schema.** The active field vocabulary is **supplied by sources**, not the language: a source package contributes fields under the `trail.schema` entry-point group; each entry point resolves to a mapping of dotted column to kind (e.g. `{"gmd.rGDP": "level", "gmd.infl": "rate"}`). Contributions merge with the language's only built-in namespace - the shared `meta.*` coordination fields - into the *active schema* (built-in `meta.*` wins on a path collision) that validation, `trail catalog`, and panel conformance use. Field kinds are freeform strings identifying the measure (`level`, `rate`, `index`, `ratio`, ...); only `flow` and `stock` carry special meaning (the `W-KIND-STOCK-FLOW` lint). Contributing the vocabulary is independent of a source instance advertising which of those fields it actually serves (the discovery capability). This is the mechanism by which a provider package adds a domain vocabulary (§10 note; Appendix B).
 7. **Pins ↔ config.** An `@ source` pin resolves against `sources` keys - configuration is what gives pin names meaning (`E-PIN-SOURCE-UNKNOWN` for an undeclared source, `E-PIN-UNSERVED` when the pinned source does not serve the field). Dependency extraction (I3) reports pinned fields per source so the runtime can prefetch exactly what a program needs.
 8. **Frequency alignment.** Each source declares its native frequency and any additional `frequencies` (its `Capabilities`). The runtime aligns every source panel to the model's target frequency (§4.4) - downsample by kind or upsample by as-of, placing by each field's known-date coordinate (§4.5) - and merges the aligned panels on `(entity, time)`.
 9. **Point-in-time.** `panel.pit` is `auto` (default) or `naive` (a value outside that set is a config error). `auto` places each value by its known-date coordinate where a source supplies one; `naive` ignores all coordinates and places every value at its period-end. A single source may override globally-`auto` placement with the source option `options.pit: naive`. (`options.pit_lag`, where present, is an adapter-level convention: the adapter synthesizes a known-date = period-end + lag for a source that has none; it is not interpreted by the core config.)
