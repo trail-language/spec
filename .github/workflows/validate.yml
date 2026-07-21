@@ -18,6 +18,6 @@ jobs:
       - name: Install reference implementation
         # The documented surface (erf/norm_ppf/ts_*, etc.) shipped in trail-lang 0.13; validate the
         # stdlib against the released reference impl rather than tracking main.
-        run: pip install "trail-lang>=0.13"
+        run: pip install "trail-lang>=0.14"
       - name: Validate stdlib against the reference implementation
         run: python scripts/validate_stdlib.py
