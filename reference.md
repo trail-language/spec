@@ -887,6 +887,19 @@ A `def` binds a **non-recursive expression macro**. It is not a runtime function
 
 Because the derived layer is expressible this way, most of the function catalog - financial ratios, `beta`/`yoy`/`avg2`, hyperbolics, `sigmoid`/`signed_log`, finite-difference calculus, robust/rolling statistics, published factors, per-entity risk metrics - is Trail source in the standard library rather than engine code; the engine carries only the primitives (§7) and registered functions (§7.6). The bundled library ships as `stdlib/{math,stats,transform,calculus,geometry,factor,timeseries,risk,core}.trail` and is **implicitly loaded** by the pipeline (the CLI `--no-stdlib` opts out); `docs/function-catalog.md` classifies the full surface (primitive / derived / registered). The `timeseries` module holds the derived operators migrated out of the engine (`yoy`, `avg2`, `cagr`, `beta`, `pctile`, …); `factor` holds the cross-sectional factor toolkit (`ntile`, `scale`, `neutralize`, `xs_corr`, …); the `risk` module holds per-entity return-series metrics (`max_drawdown`, `ann_sharpe`, `sortino`, `calmar`) built on the whole-series reducers (§7.1). Discovery (§1.3) tags each function `primitive` or `derived`.
 
+### 8.9 `track` — persisted views *(post-1.0)*
+
+A `model` or `signal` prefixed with **`track`** is a **persisted view**: its result frame is written to a **view store** (a writeable provider, §10.2 rule 12) on first run and served back on later runs instead of being recomputed - until the program, the panel configuration, or the underlying source data changes, when it is recomputed. `track` is **semantically transparent**: referencing a tracked view always yields exactly the frame a fresh evaluation would - it is a memoization, not a new value - so adding or removing `track` never changes a program's meaning. With no view store reachable a tracked declaration still computes correctly, only without persisting.
+
+```trail
+track model scores at annual {
+    on_missing skip
+    export value = value_z() by meta.sector
+}
+```
+
+Recompute is **lazy and change-driven**: nothing runs until the next reference. If every dependency source reports no change since the view was built, the stored frame is served unchanged; if a source reports which input cells changed (the optional `changed_since` capability, §11.1), only the output cells that depend on them are recomputed and merged - the result identical to a full recompute. A source offering no change signal forces a whole-view recompute on any change. The runtime provides lifecycle operations to list stored views, delete one (forcing a full recompute on its next reference), and eagerly rebuild one.
+
 ---
 
 ## 9. Diagnostics
@@ -919,6 +932,10 @@ Validators and the runtime MUST report at minimum the following. Errors block co
 | `E-SOURCE-NAME` | error | config | a source name not matching `^[A-Za-z0-9_-]+$` (would break the `#source` codec tag) | `sources: { a.b: … }` |
 | `E-SOURCE-UNKNOWN` | error | config | a `precedence` chain names an undeclared source | `precedence.default: [nosuch]` |
 | `E-SOURCE-DRIVER` | error | config | a `driver` neither a registered `trail.sources` name nor a resolvable dotted path | `driver: nosuch` |
+| `E-PROVIDER-NAME` | error | config | a `providers` name not matching `^[A-Za-z0-9_-]+$` (§10.2 rule 12) | `providers: { a.b: … }` |
+| `E-PROVIDER-DRIVER` | error | config | a view-store `driver` neither a registered `trail.providers` name nor a resolvable dotted path | `driver: nosuch` |
+| `E-PROVIDER-OPTIONS` | error | config | a view-store provider missing a required option (e.g. local-disk `dir`) | |
+| `E-VIEW-NAME` | error | run | a `drop`/`refresh` view name not matching `^[A-Za-z0-9_-]+$` (path-traversal guard) | `drop("../x")` |
 | `E-SOURCE-PANEL` | error | load | a source panel lacks `entity`/`time`, or (under `panel.strict`) any contract deviation | |
 | `E-SOURCE-EMPTY` | error | load | no configured source provides any requested field | |
 | `E-PIN-SOURCE-UNKNOWN` | error | load | an `@ source` pin names an undeclared source | `x @ nosuch` |
@@ -976,6 +993,11 @@ precedence:                      # namespace (a field's first dotted segment) ->
   default: [fmp]                 # required fallback chain
   income: [edgar, fmp]           # per-namespace chains; a field served by >1 coalesces per cell
   price: [fmp]
+
+providers:                       # optional writeable view stores for `track`ed views (§8.9)
+  views:                         # provider name = the namespace its views are addressed under
+    driver: views_local          # a registered trail.providers name, or a dotted path
+    options: { dir: /var/trail/views }
 ```
 
 The **target frequency** is not a config key: it comes from each `model`/`signal`'s `at <freq>` (else the finest frequency referenced, §4.4).
@@ -993,6 +1015,7 @@ The **target frequency** is not a config key: it comes from each `model`/`signal
 9. **Point-in-time.** `panel.pit` is `auto` (default) or `naive` (a value outside that set is a config error). `auto` places each value by its known-date coordinate where a source supplies one; `naive` ignores all coordinates and places every value at its period-end. A single source may override globally-`auto` placement with the source option `options.pit: naive`. (`options.pit_lag`, where present, is an adapter-level convention: the adapter synthesizes a known-date = period-end + lag for a source that has none; it is not interpreted by the core config.)
 10. **`panel.periods`** bounds the `time` axis after loading (years or ISO dates); under `panel.pit: auto` this is the **decision** calendar (§4.5). It does not change PIT semantics.
 11. **CLI verbs.** `trail validate PATH` is config-free (pure static analysis) and `trail catalog [target]` reads only the registries (§1.3); the data-binding verbs read the config: `trail run PATH --model M [--config C] [--out …]` runs a model, `trail signal PATH --name N [--config C] [--out …]` runs a `signal` to its `(entity, time, N)` series (§8.4), and `trail describe PATH [--config C] [--model M] [--field F]` is a **discoverability** tool - it loads the configured sources and reports the available fields grouped by namespace and, for **low-cardinality categorical** fields, their distinct observed values with row counts (verbatim, unnormalized), answering "which `sector`/`exchange` strings does this source actually emit?" so an author can write a correct provider-specific expression. `--model` scopes `describe`'s panel to a model and its bound universe; `--field` narrows to one field. All data-binding verbs accept `--no-stdlib`. (`backtest` execution is post-1.0.)
+12. **View stores (providers)** *(post-1.0)*. The optional `providers` map binds names to **writeable view stores** that persist `track`ed views (§8.9), parallel to `sources`: a `driver` resolves by a registered `trail.providers` entry-point name or a dotted path (`E-PROVIDER-DRIVER` if neither), and `options` configure it (`E-PROVIDER-OPTIONS` for a missing required option). When none is configured the runtime provides a local-disk default beside the config. A provider name is the namespace under which its views are addressed and MUST match `^[A-Za-z0-9_-]+$` (`E-PROVIDER-NAME`).
 
 ---
 
@@ -1012,10 +1035,14 @@ class DataSource(ABC):
 
     def describe_field(self, field: str) -> FieldInfo | None: ...      # optional (default None)
     def entities(self, universe: str | None = None) -> list[str]: ...  # optional (default [])
+    def freshness_token(self) -> str | None: ...                       # optional (default None)
+    def changed_since(self, cursor: str | None) -> set[tuple] | None: ...  # optional (default None)
     def close(self) -> None: ...                                       # optional (idempotent no-op)
 ```
 
 A source is constructed with its `trail.yaml` `options` dict. `available_fields(frequency)` returns the canonical fields the source can serve at that frequency (`None` = its default); a source that serves different fields per frequency branches on it.
+
+The two optional **changefeed** refinements support incremental recompute of persisted views (§8.9), both defaulting to `None` (no changefeed): `freshness_token()` returns a cheap opaque token summarizing the source's current state - a tracked view records it at build and a later value that differs means the view may be stale; `changed_since(cursor)` returns the exact `(entity, period-end)` input cells whose values changed since a prior token (or `None` when the source cannot say, in which case a dependent view recomputes wholly on any change). A source implementing `changed_since` enables footprint-scoped recompute; the served result is identical either way.
 
 ### 11.2 `LoadRequest`
 
