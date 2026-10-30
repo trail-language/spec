@@ -32,6 +32,7 @@ The reference implementation lives in [`trail-py`](https://github.com/trail-lang
 | [`grammar/trail.lark`](grammar/trail.lark) | The same grammar in Lark form (drives the reference parser). |
 | [`reference.md`](reference.md) | The language reference: data model, semantics, functions, declarations, diagnostics, config. |
 | [`function-catalog.md`](function-catalog.md) | Every standard function, classified primitive / derived / registered. |
+| [`WALKTHROUGH.md`](WALKTHROUGH.md) | Verified hands-on setup + usage walkthrough (trail-edgar as the data source: commands, real outputs, gotchas). |
 | [`stdlib/`](stdlib/) | The canonical standard library - derived functions written in Trail itself. |
 | [`VERSIONING.md`](VERSIONING.md) | How this specification is versioned. |
 
