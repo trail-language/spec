@@ -631,7 +631,7 @@ There is **no `backtest`** and **no `init`/scaffold** command (verified on PyPI 
 from trail.config import load_config
 from trail.repl.session import ReplSession
 
-s = ReplSession(config=load_config("trail.yaml"))  # no config: bundled fixture panel
+s = ReplSession(config=load_config("trail.yaml"))  # without a config the bundled fixture panel loads, but its fields are not schema-registered - see Known limitations
 r = s.process_input("edgar.revenue")               # -> Result; r.value is the polars frame
 ```
 
@@ -767,6 +767,8 @@ trail> lag(edgar.revenue)
 ### Known limitation (cosmetic)
 
 The banner's static "Try:" hint line still shows the fixture fields (`income.revenue`, `balance.total_assets`) in a config-backed session — one-line cosmetic in `trail/repl/loop.py`; follow-up candidate for trail-lang.
+
+- **No-config field queries fail (engine gap, not a REPL bug):** without `--config` / a local `trail.yaml`, the session runs on the bundled fixture panel, but the fixture declares no `trail.schema` entry point (each source package declares its own field vocabulary; the engine core only registers `meta.*`), so every bare field reference fails static validation with `E-FIELD-UNKNOWN` - including the fixture's own `income.*`/`balance.*`/`cash.*`/`price.*` columns. The `?` catalog still works; field queries need a config. Verified pre-existing on both PyPI 0.18.0 and trail-lang main @ 52958d8 (2026-10-31).
 
 
 ### `trail web` — broken (verified)
