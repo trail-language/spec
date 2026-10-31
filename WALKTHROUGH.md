@@ -3,7 +3,7 @@
 **How to use this guide:**
 
 - **Python ≥ 3.11** (every command below runs on CPython 3.14).
-- **`trail-lang 0.19.0` + `trail-edgar 0.6.0`** (both on PyPI), installed with `pipx` in §1.
+- **`trail-lang 0.19.1` + `trail-edgar 0.6.0`** (both on PyPI), installed with `pipx` in §1.
 - Running example throughout: **AAPL + MSFT, fiscal years 2020–2024**, SEC EDGAR via the `edgar` driver.
 - You need an SEC fair-access identity string (`"Your Name your.email@example.com"`). It appears as the `$EDGAR_IDENTITY` placeholder — substitute your own value in local files and never commit it.
 - **Everything is REPL-driven.** Setup is two `pipx` commands plus one `trail init` prompt; every data section below is a live REPL session. No hand-written YAML, no script files, no CSVs.
@@ -17,10 +17,10 @@ Two commands. `trail-edgar` is a **driver library** — it provides the `edgar` 
 
 ```
 $ pipx install trail-lang
-  installed package trail-lang 0.19.0, installed using Python 3.14.4
+done! ✨ 🌟 ✨
+  installed package trail-lang 0.19.1, installed using Python 3.14.4
   These apps are now globally available
     - trail
-done! ✨ 🌟 ✨
 
 $ pipx inject trail-lang trail-edgar
   injected package trail-edgar into venv trail-lang
@@ -31,7 +31,7 @@ Verify:
 
 ```
 $ trail --version
-trail 0.19.0
+trail 0.19.1
 ```
 
 That is the entire install. `prompt_toolkit` is a core dependency of `trail-lang` as of 0.19.0, so `trail repl` works out of the box — there is no extra install step.
@@ -106,7 +106,7 @@ Start the REPL. The banner is shown in full once here and omitted in later sessi
 
 ```
 $ trail repl --config trail.yaml
-  Trail REPL v0.19.0
+  Trail REPL v0.19.1
   Expression language for financial indicators.
   Try: income.revenue / balance.total_assets
   Or:  margin = income.operating_income / income.revenue
@@ -751,7 +751,7 @@ $ trail mcp
 ERROR the MCP server needs the optional 'mcp' dependency: pip install trail-lang[mcp]
 ```
 
-**The install to use.** The `trail-lang[mcp]` extra declares `mcp>=1.2.0` with **no upper cap**; a fresh resolve pulls **mcp 2.3.0**, which the server does not start against — it reports the same "missing dependency" error as above (it imports `mcp.server.fastmcp.FastMCP`, a 1.x path). The verified install into the pipx environment:
+**The install to use.** The `trail-lang[mcp]` extra is capped at `mcp<2` (fresh resolves land on mcp 1.x), so the verified install into the pipx environment is the straightforward one:
 
 ```
 $ pipx inject trail-lang 'mcp>=1.2,<2'
@@ -760,7 +760,7 @@ done! ✨ 🌟 ✨
   injected package mcp into venv trail-lang
 ```
 
-(mcp 1.30.0.)
+(mcp 1.30.0.) Injecting the extra itself — `pipx inject trail-lang 'trail-lang[mcp]'` — is a no-op: under PEP 610 the already-installed `trail-lang` satisfies the requirement, so pip ignores the extra and `mcp` would never land.
 
 Start the server (the default transport is `stdio` for local MCP clients; `streamable-http` for the network):
 
@@ -872,21 +872,19 @@ shape: (9, 3)
 
 ## 11. Known limitations & not runnable here
 
-- **The banner's `Try:` hint — use `edgar.revenue`, not `income.revenue` (and on 0.19.0, typing it crashes the REPL).** The banner advertises `income.revenue`, but a config-backed edgar panel exposes only `edgar.*` (40) + `meta.*` (5) columns. The catalog still advertises all six namespaces (`income` has 14 fields), so `income.revenue` passes validation and then fails at the data layer with a multi-line error containing raw `<`/`>` characters. 0.19.0's error printer wraps the message in `HTML(...)` (prompt_toolkit), which raises an unhandled `xml.parsers.expat.ExpatError` — the REPL exits with a traceback:
+- **The banner's `Try:` hint — use `edgar.revenue`, not `income.revenue`.** The banner advertises `income.revenue`, but a config-backed edgar panel exposes only `edgar.*` (40) + `meta.*` (5) columns. The catalog still advertises all six namespaces (`income` has 14 fields), so `income.revenue` passes validation and fails at the data layer. On 0.19.1 the error renders cleanly and the REPL keeps running:
 
   ```
-    File ".../trail/repl/loop.py", line 83, in show_error
-      print_formatted_text(HTML(f"  <red>Error: {message}</red>"))
-      ...
-  xml.parsers.expat.ExpatError: not well-formed (invalid token)
+  trail> income.revenue
+    Error: unable to find column "income.revenue"; valid columns: ["entity", "time", "edgar.accounts_payable", ...]
   ```
 
-  (paths trimmed.) Use the column names from `?` / `? edgar` instead.
+  (column list trimmed.) Use the column names from `?` / `? edgar` instead.
 - **Statements are single-line.** The REPL submits each line as a complete statement; entering a multi-line model yields a per-line `PARSE ERROR` (`Unexpected token Token('$END', '')`). Keep models/universes/signals on one line, as in §7/§8.
 - **Piped stdin is rejected** — the REPL requires a TTY (prompt_toolkit). For non-interactive use, use the `ReplSession` API (§10) or `trail run`.
-- **`trail web` is not runnable** — on 0.19.0, `GET /` and `POST /api/sessions` both return 501 (`Unsupported method ('GET')` / `('POST')`).
+- **`trail web` is not runnable** — on 0.19.1, `GET /` and `POST /api/sessions` both return 501 (`Unsupported method ('GET')` / `('POST')`).
 - **Out of scope** — other source drivers (funda/marketdata) are not covered by this walkthrough (edgar only); tests marked live/CI-only are excluded from offline verification.
 
 ---
 
-*`trail-lang 0.19.0` · `trail-edgar 0.6.0` · `mcp 1.30.0` (pinned — §9.3)*
+*`trail-lang 0.19.1` · `trail-edgar 0.6.0` · `mcp 1.30.0` (pinned — §9.3)*
