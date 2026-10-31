@@ -1,102 +1,93 @@
 # Trail-EDGAR setup + walkthrough (verified notes)
 
-Machine: this host (Linux). Walkthrough date: 2026-10-25. Running example throughout: **AAPL + MSFT, fiscal years 2020–2024**, SEC EDGAR via `trail-edgar`. Every command below was executed on this machine and every output block is real (trimmed only where noted). Identity value is redacted as `$EDGAR_IDENTITY` throughout.
+**How to use this guide:**
+
+- **Python >= 3.11** (every command below was verified on CPython 3.13.13).
+- Pick a working directory (convention: `trail-work/`) and create the venv **inside** it (`.venv`). Every command runs from inside the working directory with relative paths.
+- You need an SEC fair-access identity string (`"Your Name your.email@example.com"`); it appears as the `$EDGAR_IDENTITY` placeholder throughout — substitute the real value in your local files, never commit it.
+- Running example throughout: **AAPL + MSFT, fiscal years 2020–2024**, SEC EDGAR via `trail-edgar`.
+- Every command was executed and every output block is real (trimmed only where noted), re-verified 2026-10-31 in a fresh venv from PyPI; commands are in portable form so you can follow along and execute them on any platform.
 
 ---
 
 ## 1. Setup
 
 ### Goal
-Install `trail-lang` (engine) + `trail-edgar` (source driver) in an isolated venv so the `edgar.*` namespace works, and verify.
+Install `trail-lang` (engine) + `trail-edgar` (SEC EDGAR source driver) from PyPI into an isolated venv so the `edgar.*` namespace works, and verify.
 
-### Repo state (verified 2026-10-25)
+### Command (verified 2026-10-31, fresh venv)
 ```
-$ cd /home/usmanshahid/Documents/claude/workspaces/trail/trail-edgar && git fetch origin
-$ git log --oneline -1 main        # bdd58f3
-$ git log --oneline -1 origin/main # bdd58f3  → origin/main NOT ahead; no pull needed
+python3 -m venv .venv
+.venv/bin/pip install trail-lang trail-edgar
 ```
-- **trail-edgar**: `main @ bdd58f3` = `origin/main` (v0.5.0). No upstream movement this session.
-- **trail-lang**: `main @ 7998bb7` (v0.18.0). Dirty working tree (untracked `.claude/`, untracked `uv.lock`) — left untouched (read-only rule).
+PyPI versions (verified): `trail-lang 0.18.0`, `trail-edgar 0.5.0`. If your venv has no `pip` module yet: `.venv/bin/python -m ensurepip` first.
 
-### Command (verbatim)
+**REPL note:** the terminal REPL needs `prompt_toolkit`, which the PyPI 0.18.0 release does **not** declare as the `[repl]` extra — install it directly (the extra arrives with the next release):
 ```
-cd /tmp/opencode
-python3 -m venv trail-env        # (pre-existing venv; recreate if empty)
-/tmp/opencode/trail-env/bin/python -m pip install -e \
-  "/home/usmanshahid/Documents/claude/workspaces/trail/trail-lang[mcp]" \
-  -e "/home/usmanshahid/Documents/claude/workspaces/trail/trail-edgar"
+.venv/bin/pip install prompt_toolkit
 ```
-
-### Real output / gotchas (verbatim)
-- The venv has **no `pip` binary**:
-  ```
-  bash: /tmp/opencode/trail-env/bin/pip: No such file or directory
-  ```
-  → always use `python -m pip` (and `python -m ensurepip` if pip is absent entirely).
-- **Import name trap:** the dist is `edgartools==5.62.1` but it does NOT import as `edgartools`:
-  ```
-  ModuleNotFoundError: No module named 'edgartools'
-  ```
-  The top-level module is **`edgar`** (`from edgar import Company`, `edgar.exceptions.CompanyNotFoundError`). The driver itself uses `from edgar import Company`.
-
-### Minimal config — `trail.yaml`
-```yaml
-# Minimal Trail config: SEC EDGAR only, 2-ticker universe, annual 2020-2024.
-sources:
-  edgar:
-    driver: edgar
-    options:
-      identity: "$EDGAR_IDENTITY"      # 'Your Name your.email@example.com' (redacted); or EDGAR_IDENTITY env var
-      tickers: [AAPL, MSFT]
-      years: [2020, 2024]
-      cache_dir: /tmp/opencode/trail-work/.edgar-cache
-precedence:
-  default: [edgar]
-panel:
-  periods: [2020, 2024]
-  pit: auto
-  strict: false
-```
+The REPL itself also has a PyPI-vs-main caveat — read the note at the start of §12 before running that section.
 
 ### Verification (verbatim)
 ```
-$ /tmp/opencode/trail-env/bin/python -c "import trail; print(trail.__version__)"
-0.18.0
-$ /tmp/opencode/trail-env/bin/python -c "import trail_edgar; print(trail_edgar.__version__)"
-0.5.0
-$ /tmp/opencode/trail-env/bin/python -c "from edgar import Company; import edgar; print('edgar import OK')"
-edgar import OK
-$ /tmp/opencode/trail-env/bin/trail --version
-Usage: trail [OPTIONS] COMMAND [ARGS]...
-Error: No such option '--version'.        # exit 2 — NOT a flag; use `import trail`
+$ .venv/bin/python -c "import importlib.metadata as m; import trail; print(trail.__version__, m.version('trail-lang'), m.version('trail-edgar'))"
+0.18.0 0.18.0 0.5.0
+```
+- `trail.__version__` reads from the installed package; `trail_edgar` has **no `__version__` attribute** (verified: `AttributeError: module 'trail_edgar' has no attribute '__version__'`) — use `importlib.metadata` or `pip show trail-edgar`.
+- `trail --version` does not exist:
+  ```
+  $ .venv/bin/trail --version
+  Usage: trail [OPTIONS] COMMAND [ARGS]...
+  Try 'trail --help' for help.
+
+  Error: No such option '--version'.        # exit 2 — not a flag; use the version line above
+  ```
+- **Import name trap:** the dist is `edgartools==5.62.1` (installed as a dependency) but it does NOT import as `edgartools`:
+  ```
+  $ .venv/bin/python -c "from edgar import Company; import edgar; print('edgar import OK')"
+  edgar import OK
+  ```
+  The top-level module is **`edgar`** (`from edgar import Company`, `edgar.exceptions.CompanyNotFoundError`). The driver itself uses `from edgar import Company`.
+- Without `prompt_toolkit`, the REPL exits early with:
+  ```
+  $ .venv/bin/trail repl
+  prompt_toolkit is required for the REPL.
+  Install it with: pip install trail-lang[repl]        # exit 1
+  ```
+
+### Minimal config — `trail.yaml` (hand-written)
+
+There is **no `trail init` / scaffold command** (verified: §11 lists every CLI command) — the config is hand-written. Canonical minimal config, one comment per key:
+
+```yaml
+# Minimal Trail config: SEC EDGAR source, 2-ticker universe, annual 2020-2024.
+sources:
+  edgar:
+    driver: edgar                      # source driver name (entry point provided by trail-edgar)
+    options:
+      identity: "$EDGAR_IDENTITY"      # SEC fair-access 'Your Name your.email@example.com'
+      tickers: [AAPL, MSFT]            # tickers to fetch
+      years: [2020, 2024]              # the N most-recent fiscal years the driver fetches
+      cache_dir: .edgar-cache          # local cache dir (relative paths are fine)
+precedence:
+  default: [edgar]                     # field-namespace -> source resolution order
+panel:
+  periods: [2020, 2024]                # requested panel window
+  pit: auto                            # as-of filing-date placement (see §5)
+  strict: false
 ```
 
-### Test suites (read-only; `-p no:cacheprovider` so no `.pytest_cache` in the repos)
-```
-$ cd /home/usmanshahid/Documents/claude/workspaces/trail/trail-edgar
-$ /tmp/opencode/trail-env/bin/python -m pytest -q -p no:cacheprovider
-....................................                                     [100%]
-36 passed, 1 deselected in 0.50s
-$ cd /home/usmanshahid/Documents/claude/workspaces/trail/trail-lang
-$ /tmp/opencode/trail-env/bin/python -m pytest -q -p no:cacheprovider
-FAILED tests/mcp/test_server.py::test_server_lists_and_calls_eval - Failed: a...
-FAILED tests/test_catalog.py::test_namespaces_and_fields - AssertionError: as...
-FAILED tests/test_ops_factor.py::test_ewm_std_exists - assert None == 0.0 ± 1...
-3 failed, 520 passed, 8 warnings in 5.04s
-```
-Root causes (all three verified this session):
-1. `test_namespaces_and_fields` asserts the exact namespace set `{income,balance,cash,price,meta}` and fails on the **extra `edgar` namespace contributed by the installed driver** — cross-package test isolation, not an engine bug.
-2. `test_server_lists_and_calls_eval` is `async def` and needs **pytest-asyncio**, which is not installed ("async def functions are not natively supported").
-3. `test_ewm_std_exists` — `ewm_std` returns `None` where the test expects `0.0` (genuine op bug in the engine).
+**Identity:** put your fair-access string in `options.identity` (shown here as the `$EDGAR_IDENTITY` placeholder — substitute the real value in your local file). Unix shells may instead export it once and omit the `identity` key: `export EDGAR_IDENTITY="Your Name your.email@example.com"`. Resolution order: `options.identity` first, then the env var; without either you get the coded error in §9.
 
 ### What it does
-Editable installs wire the `edgar` driver in via the entry-point mechanism; `precedence.default: [edgar]` makes `edgar.*` fields resolve to this source; `panel` defines the requested periods and PIT mode.
+The pip install wires the `edgar` driver in via the entry-point mechanism (the driver registers itself with the engine; no code changes needed); `precedence.default: [edgar]` makes `edgar.*` fields resolve to this source; `panel` defines the requested periods and PIT mode.
 
 ### Gotchas
-- `trail --version` does not exist; version comes from `import trail`.
-- On main, the `[mcp]` extra is the only extra declared in `trail-lang` pyproject (the `trail-lang[repl]` referenced in CLI help text is NOT declared); PR #55 adds the `[repl]` extra (`prompt_toolkit>=3`) — the REPL section (§12) is verified against that branch.
+- `trail --version` does not exist; version comes from `import trail` / `importlib.metadata`.
+- On PyPI 0.18.0 the `[mcp]` extra is the only extra declared in `trail-lang` (the `trail-lang[repl]` referenced in the REPL error text is **not** declared there — install `prompt_toolkit` directly).
 
 ---
+
 
 ## 2. Fetch first frame
 
@@ -113,9 +104,7 @@ model rev_frame at annual {
 
 ### Command (verbatim)
 ```
-cd /tmp/opencode/trail-work
-export EDGAR_IDENTITY="$EDGAR_IDENTITY"
-/tmp/opencode/trail-env/bin/trail run first.trail --model rev_frame --config trail.yaml --out first.csv
+.venv/bin/trail run first.trail --model rev_frame --config trail.yaml --out first.csv
 ```
 
 ### Real output
@@ -170,7 +159,7 @@ model fundamentals at annual {
 
 ### Command (verbatim)
 ```
-/tmp/opencode/trail-env/bin/trail run fundamentals.trail --model fundamentals --config trail.yaml --out fundamentals.csv
+.venv/bin/trail run fundamentals.trail --model fundamentals --config trail.yaml --out fundamentals.csv
 ```
 
 ### Real output
@@ -193,9 +182,9 @@ MSFT,2024-12-31T00:00:00.000000,245122000000.0,0.1566996201307127,0.697644438279
 
 Also verified:
 ```
-$ /tmp/opencode/trail-env/bin/trail validate fundamentals.trail
+$ .venv/bin/trail validate fundamentals.trail
 OK
-$ /tmp/opencode/trail-env/bin/trail describe fundamentals.trail
+$ .venv/bin/trail describe fundamentals.trail
 Panel: 9 rows | 2 entities | 44 fields | period 2020-12-31..2024-12-31
 
 Fields by namespace:
@@ -269,7 +258,7 @@ model functions at annual {
 
 ### Command (verbatim)
 ```
-/tmp/opencode/trail-env/bin/trail run functions.trail --model functions --config trail.yaml --out functions.csv
+.venv/bin/trail run functions.trail --model functions --config trail.yaml --out functions.csv
 ```
 Output: `wrote functions.csv`. `functions.csv` (complete — 9 rows; values in raw form, e.g. 2.718… = log of 15B):
 ```
@@ -310,7 +299,7 @@ Show how period keys, filing dates, and `pit: auto` vs `pit: naive` shape the pa
 model qtr2 at quarterly {
     export rev = quarterly.edgar.revenue
 }
-$ /tmp/opencode/trail-env/bin/trail run qtr2.trail --model qtr2 --config trail.yaml --out qtr2.csv
+$ .venv/bin/trail run qtr2.trail --model qtr2 --config trail.yaml --out qtr2.csv
 ```
 
 ### Real output
@@ -318,7 +307,7 @@ $ /tmp/opencode/trail-env/bin/trail run qtr2.trail --model qtr2 --config trail.y
 WARN  W-PIT-PARTIAL 9 row(s) carry no '__date:filing_date' coordinate; placing those at period-end (naive)
 wrote qtr2.csv
 ```
-`qtr2.csv` — 30 data rows. Verbatim head/tail (MSFT 12-31 rows show the fiscal-Q4 label quirk):
+`qtr2.csv` — 29 data rows. Verbatim head/tail (MSFT 12-31 rows show the fiscal-Q4 label quirk):
 ```
 entity,time,rev
 AAPL,2020-12-31T00:00:00.000000,64698000000.0
@@ -327,11 +316,11 @@ AAPL,2021-06-30T00:00:00.000000,89584000000.0
 AAPL,2021-09-30T00:00:00.000000,81434000000.0
 AAPL,2021-12-31T00:00:00.000000,83360000000.0
 ...
-MSFT,2020-12-31T00:00:00.000000,37154000000.0
 MSFT,2021-03-31T00:00:00.000000,43076000000.0
 MSFT,2021-06-30T00:00:00.000000,41706000000.0
 MSFT,2021-12-31T00:00:00.000000,91469000000.0
 MSFT,2022-03-31T00:00:00.000000,51728000000.0
+MSFT,2022-06-30T00:00:00.000000,49360000000.0
 ...
 MSFT,2024-12-31T00:00:00.000000,64727000000.0
 ```
@@ -347,10 +336,10 @@ MSFT,2024-12-31T00:00:00.000000,64727000000.0
 - **`pit: auto` vs `pit: naive` on the same model** (verbatim):
   ```
   $ trail run qtr2.trail --model qtr2 --config trail-naive.yaml --out qtr2-naive.csv   # pit: naive
-  wrote qtr2-naive.csv          # 33 data rows
+  wrote qtr2-naive.csv          # 32 data rows
   $ trail run qtr2.trail --model qtr2 --config trail.yaml --out qtr2b.csv             # pit: auto
   WARN  W-PIT-PARTIAL 9 row(s) carry no '__date:filing_date' coordinate; placing those at period-end (naive)
-  wrote qtr2b.csv               # 30 data rows
+  wrote qtr2b.csv               # 29 data rows
   ```
   The align engine (`load_panel_for` in trail-lang, the CLI path) **retimes/merges rows vs the raw driver panel**: in the CLI `pit: auto` output, MSFT's fiscal-Q4 values land on 12-31 keys and some quarters merge (e.g. `MSFT,2021-12-31 = 91469000000` = Q4 2021 46.152B + Q1 2022 45.317B), while the raw driver panel has them as separate `(2021,4)=46.152B @ 2021-12-31` and `(2022,1)=45.317B @ 2022-03-31`. Treat the raw-driver probe as the ground truth for "what EDGAR says" and the CLI panel as the engine's aligned view.
 - **`@` is a SOURCE pin, not an entity pin:** `edgar.revenue @ edgar` is the valid form (verified: `pin2.trail` with `export pinned_rev = edgar.revenue @ edgar` runs clean); `@ MSFT` (entity pin) is not supported. Align overrides like `@ truncate(filing_date, "1mo")` are rejected: `ERROR SYNTAX at line 2, column 60: unexpected ','`.
@@ -360,6 +349,7 @@ PIT semantics = as-of filing date, restatement-aware in design: each statement r
 
 ### Gotchas
 - Fiscal-calendar simplification: fiscal Q4 is keyed Dec-31 of the label year regardless of the actual fiscal year-end month (Sept for AAPL, June for MSFT). Values are real; the *dates* are the simplification.
+- The driver fetches the N most-recent quarters, so the oldest rows leave the window as fetch dates advance: MSFT's 2020-12-31 row (37.154B, raw "Q1 2021") was present in the 2026-10-25 run and absent in the 2026-10-31 re-run (29 vs 30 rows) — the quarterly analogue of §2's MSFT-2020 annual gap.
 - Row counts differ between `pit: auto` and `pit: naive` — do not "fix" this; it is the PIT placement behavior.
 - Restatements: no restated (duplicate-filing) period exists for AAPL/MSFT in the 2020–2024 demo window (exactly one filing-date coordinate per (ticker, period)), so restatement-aware selection cannot be demonstrated with real data here — see "Not runnable here".
 
@@ -419,7 +409,7 @@ Document every knob exercised, with effect.
 | Config | Diff from `trail.yaml` | Verified effect |
 |---|---|---|
 | `trail.yaml` | — | baseline: `pit: auto` |
-| `trail-naive.yaml` | `panel.pit: naive` | quarterly run: no `W-PIT-PARTIAL` warning; 33 rows vs 30 |
+| `trail-naive.yaml` | `panel.pit: naive` | quarterly run: no `W-PIT-PARTIAL` warning; 32 rows vs 29 |
 | `trail-noid.yaml` | no `identity` option; `EDGAR_IDENTITY` unset | coded error (see §9) |
 | `trail-badtkr.yaml` | `tickers: [ZZZZZZZ]` | raw traceback `CompanyNotFoundError` (see §9) |
 | `trail-oldyears.yaml` | `panel.periods: [1900, 1910]` | empty frame, no error (see §9) |
@@ -447,9 +437,9 @@ Show the cache and its effect.
 
 ### Command (verbatim)
 ```
-sed 's|/tmp/opencode/trail-work/.edgar-cache|/tmp/opencode/trail-work/.edgar-cache-cold|' trail.yaml > trail-coldcache.yaml
-time /tmp/opencode/trail-env/bin/trail run first.trail --model rev_frame --config trail-coldcache.yaml --out first-cold.csv
-time /tmp/opencode/trail-env/bin/trail run first.trail --model rev_frame --config trail-coldcache.yaml --out first-warm.csv
+sed 's|cache_dir: .edgar-cache|cache_dir: .edgar-cache-cold|' trail.yaml > trail-coldcache.yaml
+time .venv/bin/trail run first.trail --model rev_frame --config trail-coldcache.yaml --out first-cold.csv
+time .venv/bin/trail run first.trail --model rev_frame --config trail-coldcache.yaml --out first-warm.csv
 ```
 
 ### Real output
@@ -458,9 +448,9 @@ wrote first-cold.csv
 real  0m2.027s
 wrote first-warm.csv
 real  0m1.571s
-$ du -sh /tmp/opencode/trail-work/.edgar-cache-cold
-664K  /tmp/opencode/trail-work/.edgar-cache-cold
-$ ls /tmp/opencode/trail-work/.edgar-cache-cold/_tcache
+$ du -sh .edgar-cache-cold
+664K  .edgar-cache-cold
+$ ls .edgar-cache-cold/_tcache
 data.sec.gov
 ```
 
@@ -468,7 +458,7 @@ data.sec.gov
 `cache_dir` holds a polars `_tcache` (pickled frames keyed per source host, here `data.sec.gov`). A fresh `cache_dir` forces a refetch (cold); the second run reuses it (warm). The 664K cache is the two tickers' XBRL facts.
 
 ### Gotchas
-- Deleting an existing cache was approval-gated in this environment (`rm -rf` needs consent) — use a **fresh** `cache_dir` value instead; never force-delete the venv or cache.
+- To demonstrate cold vs warm without deleting anything, use a **fresh** `cache_dir` value (as above); never force-delete the venv or an existing cache.
 - The engine's own HTTP layer (edgartools' `httpxthrottlecache`) also caches in-process, so "cold" timing here includes whatever that layer still has warm.
 
 ---
@@ -534,7 +524,7 @@ Prove `trail mcp` (streamable-HTTP) is reachable and its tools work via an `mcp`
 ### Command (verbatim)
 ```
 # server (background)
-/tmp/opencode/trail-env/bin/trail mcp --transport streamable-http --host 127.0.0.1 --port 8123
+.venv/bin/trail mcp --transport streamable-http --host 127.0.0.1 --port 8123
 # → banner:
 MCP server (streamable-http) at http://127.0.0.1:8123/mcp
 ```
@@ -546,7 +536,7 @@ mcp dep missing (FastMCP import failed: cannot import name 'FastMCP' from 'mcp.s
 ```
 Root cause: `trail/mcp/server.py` does `from mcp.server.fastmcp import FastMCP`, and the SDK 2.x renamed `FastMCP` → `MCPServer`. Fix (verified):
 ```
-/tmp/opencode/trail-env/bin/python -m pip install 'mcp>=1.2,<2'     # → mcp 1.30.0
+.venv/bin/python -m pip install 'mcp>=1.2,<2'     # → mcp 1.30.0
 ```
 Client-side (mcp 1.x): the helper is **`streamablehttp_client`** (no underscore), modern signature takes a **plain str URL** (the `("url",)` tuple form errors/deprecates), and it yields **three** values:
 ```python
@@ -559,8 +549,8 @@ async with streamablehttp_client("http://127.0.0.1:8123/mcp") as (r, w, _):
 ### Verified tools (client probe, real output)
 - **Tool list (10):** `functions, schema, validate, describe, eval, run, fetch, drop, views, refresh`.
 - **`schema`** (`{"namespace": "edgar"}`) → the edgar field vocabulary (40 fields with kinds).
-- **`fetch`** (`{"expressions": ["edgar.revenue", "edgar.cogs"], "data": {"config": "/tmp/opencode/trail-work/trail.yaml"}, "entities": ["AAPL"]}`) → AAPL revenue+cogs 2020–2024. **Entity pushdown works** (only AAPL rows returned).
-- **`run`** (`{"name": "fundamentals", "path": "/tmp/opencode/trail-work/fundamentals.trail", "data": {"config": "…/trail.yaml"}, "entities": ["AAPL"], "to_file": "/tmp/opencode/trail-work/mcp-run.csv"}`) → wrote `mcp-run.csv`, shape `[5, 6]` (AAPL-only scope).
+- **`fetch`** (`{"expressions": ["edgar.revenue", "edgar.cogs"], "data": {"config": "trail.yaml"}, "entities": ["AAPL"]}`) → AAPL revenue+cogs 2020–2024. **Entity pushdown works** (only AAPL rows returned).
+- **`run`** (`{"name": "fundamentals", "path": "fundamentals.trail", "data": {"config": "trail.yaml"}, "entities": ["AAPL"], "to_file": "mcp-run.csv"}`) → wrote `mcp-run.csv`, shape `[5, 6]` (AAPL-only scope).
 - **`eval`** (`{"expression": "yoy(edgar.revenue)", "data": {"config": "…/trail.yaml"}, "entities": ["MSFT"], "format": "compact", "limit": 5}`) → MSFT revenue YoY, matching the CLI output. `{"expression": "lag(edgar.revenue)"}` → the same `E-FUNC-ARITY` as the CLI (consistency check).
 - **`validate`** (`{"source": "model m at annual { export x = edgar.revenue }", "data": {"config": "…/trail.yaml"}}`) → valid, no issues.
 
@@ -577,24 +567,26 @@ async with streamablehttp_client("http://127.0.0.1:8123/mcp") as (r, w, _):
 ```
 Usage: trail [OPTIONS] COMMAND [ARGS]...
 
-  Trail - load and compute on cross-source panels.
+  Trail - financial expression language.
 
 Options:
   --help  Show this message and exit.
 
 Commands:
-  catalog   Show field/function/source catalog.
-  describe  Show the panel shape and per-namespace fields.
-  mcp       Run the Trail MCP server (streamable-HTTP or stdio).
-  repl      Start the Trail REPL.
-  run       Run a model over a loaded panel.
-  validate  Validate a Trail program file (syntax + schema).
-  web       Start the Trail REPL web console.
+  catalog   Discover fields, functions, and sources.
+  describe  Discover what a provider actually publishes: the available...
+  mcp       Run the Trail MCP server.
+  repl      Launch the interactive Trail REPL.
+  run
+  signal    Run a `signal` declaration: a one-export, no-score model.
+  validate
+  web       Launch the Trail REPL Web Console.
 ```
-There is **no `backtest`** command (`Error: No such command 'backtest'`).
+There is **no `backtest`** and **no `init`/scaffold** command (verified on PyPI 0.18.0: `Error: No such command 'backtest'`).
 
 ### Per-command (verified)
 - **run** — `trail run PATH --model NAME [--config PATH] [--no-stdlib] [--out PATH]`. `--model` required.
+- **signal** — `trail signal PATH --name NAME [--config PATH] [--no-stdlib] [--out PATH]` (verified via `--help`): runs a `signal` declaration (one export, no score) and prints or writes (`--out`) the resulting `[entity, time, NAME]` series.
 - **validate** — `trail validate PATH [--no-stdlib]` → prints `OK`; no `--config`.
 - **describe** — `trail describe model.trail` → panel shape + namespace fields + categorical distributions.
 - **catalog** — four verified forms:
@@ -618,7 +610,7 @@ There is **no `backtest`** command (`Error: No such command 'backtest'`).
   │ kind  ┆ stdlib macro │
   ```
 - **mcp** — see §10.
-- **repl** — fixed in trail-lang PR #55 (not yet merged; §12 is verified against main + that branch). **web** — still broken in 0.18.0; see §12.
+- **repl** — fixed on trail-lang main (PR #55, merged 2026-10-31); **not in the PyPI 0.18.0 wheel** — see the note at the start of §12. **web** — broken on 0.18.0; see §12.
 
 ---
 
@@ -626,11 +618,22 @@ There is **no `backtest`** command (`Error: No such command 'backtest'`).
 
 ### Verified baseline
 
-- trail-lang **main @ `7998bb7`** (v0.18.0) + **PR #55** `fix/repl-config-and-import` @ `c8f6451` (the REPL fix — **not merged into main**).
-- Rebuilt `/tmp/opencode/trail-env` (CPython 3.13.13; `prompt_toolkit 3.0.53`, `polars 2.1.0`); same work dir and `trail.yaml` as §1–§11.
+- **trail-lang git main @ `52958d8`** — the REPL fix (PR #55, merged 2026-10-31) is on main but is **not in the PyPI 0.18.0 wheel**. Start from the §1 venv (fresh `.venv` from PyPI: `trail-lang` + `trail-edgar` + `prompt_toolkit`) and upgrade `trail-lang` to git main:
+  ```
+  .venv/bin/pip install 'git+https://github.com/trail-language/trail-lang.git'
+  ```
+  (verified 2026-10-31 in a fresh venv: installs trail-lang 0.18.0 from git main; `import trail.repl.loop` — the module the PyPI 0.18.0 wheel cannot import — succeeds.)
+- CPython 3.13.13; same work dir and `trail.yaml` as §1–§11.
 - Verified 2026-10-31 (full pty transcripts + lead re-check); all outputs below verbatim from the pty captures (ANSI stripped).
 
-**prompt_toolkit 3.x caveat:** piped stdin is refused (`Warning: Input is not a terminal (fd=0)`, then clean exit after the banner) — a prompt_toolkit limitation, not a trail bug. The sessions below were driven through a pty (`script -qec "trail repl --config trail.yaml" /dev/null < lines.txt`); the in-process `ReplSession` API is the programmatic path.
+**prompt_toolkit 3.x caveat:** piped stdin is refused (`Warning: Input is not a terminal (fd=0)`, then clean exit after the banner) — a prompt_toolkit limitation, not a trail bug. The sessions below were driven through a pty — on Unix: `script -qec "trail repl --config trail.yaml" /dev/null < lines.txt` — but `script` is **unix-only** (not on Windows). The platform-neutral driver is the in-process `ReplSession` API — the exact code path the loop calls (`run_repl` → `session.process_input` per line):
+```python
+from trail.config import load_config
+from trail.repl.session import ReplSession
+
+s = ReplSession(config=load_config("trail.yaml"))  # without a config the bundled fixture panel loads, but its fields are not schema-registered - see Known limitations
+r = s.process_input("edgar.revenue")               # -> Result; r.value is the polars frame
+```
 
 ### Startup + catalog
 
@@ -765,10 +768,12 @@ trail> lag(edgar.revenue)
 
 The banner's static "Try:" hint line still shows the fixture fields (`income.revenue`, `balance.total_assets`) in a config-backed session — one-line cosmetic in `trail/repl/loop.py`; follow-up candidate for trail-lang.
 
+- **No-config field queries fail (engine gap, not a REPL bug):** without `--config` / a local `trail.yaml`, the session runs on the bundled fixture panel, but the fixture declares no `trail.schema` entry point (each source package declares its own field vocabulary; the engine core only registers `meta.*`), so every bare field reference fails static validation with `E-FIELD-UNKNOWN` - including the fixture's own `income.*`/`balance.*`/`cash.*`/`price.*` columns. The `?` catalog still works; field queries need a config. Verified pre-existing on both PyPI 0.18.0 and trail-lang main @ 52958d8 (2026-10-31).
+
 
 ### `trail web` — broken (verified)
 ```
-$ /tmp/opencode/trail-env/bin/trail web --host 127.0.0.1 --port 8099
+$ .venv/bin/trail web --host 127.0.0.1 --port 8099
 Trail REPL Web Console running on http://127.0.0.1:8099
 $ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8099/
 501
@@ -784,21 +789,37 @@ Root cause 2: `_do_GET` does `path = parsed.path.rstrip("/")` then compares `pat
 
 ---
 
-## Environment facts (exact)
+## Environment (verified)
 
-- **Engine:** trail-lang **0.18.0** @ `7998bb7` (editable from `/home/usmanshahid/Documents/claude/workspaces/trail/trail-lang`); dirty tree (untracked `.claude/`, `uv.lock`) untouched.
-- **Driver:** trail-edgar **0.5.0** @ `bdd58f3` (editable from `/home/usmanshahid/Documents/claude/workspaces/trail/trail-edgar`) = `origin/main`.
-- **Venv:** `/tmp/opencode/trail-env` on **CPython 3.13.13** (uv-managed: `/home/usmanshahid/.local/share/uv/python/cpython-3.13.13-linux-x86_64-gnu`); system `python3` is 3.14.7. No bare `pip` in the venv — use `python -m pip`.
-- **Exact package set (pip freeze):** trail-lang 0.18.0 (editable), trail-edgar 0.5.0 (editable), polars 2.0.0 (+polars-runtime-32), edgartools 5.62.1 (import name `edgar`), lark 1.3.1, **mcp 1.30.0** (pinned `<2`), mcp-types 2.3.0, prompt-toolkit 2.0.10, pytest 9.1.1, tzdata 2026.5, httpx 0.28.1, httpx-sse 0.4.3, httpx2 2.16.0, httpxthrottlecache 0.7.0.
-- **Work dir:** `/tmp/opencode/trail-work` (configs, `.trail` models, CSVs, probe scripts, `.edgar-cache` 664K `_tcache/data.sec.gov`).
-- **Identity:** redacted here as `$EDGAR_IDENTITY`; provided via `options.identity` and the `EDGAR_IDENTITY` env var (SEC fair-access `Name email` string).
-- **MCP server:** `trail mcp --transport streamable-http --host 127.0.0.1 --port 8123` → `http://127.0.0.1:8123/mcp`.
+- **Python:** 3.13.13 (CPython; both packages declare `requires_python >= 3.11`).
+- **Engine:** trail-lang **0.18.0** from PyPI for §1–§11; §12 (REPL) uses trail-lang **git main** (the post-0.18.0 REPL fix) via the one-liner in §12. (The editable-install dev workflow is Appendix A.)
+- **Driver:** trail-edgar **0.5.0** from PyPI.
+- **Key deps (PyPI-resolved):** edgartools 5.62.1 (import name `edgar`), polars 2.1.0, lark 1.3.1, prompt_toolkit 3.0.53 (installed manually — §1), mcp 1.30.0 after the §10 pin (the `[mcp]` extra alone resolves **mcp 2.3.0**).
+- **Working dir:** one directory (e.g. `trail-work/`) holding `.venv/`, `trail.yaml`, the `.trail` models, CSVs, and `.edgar-cache/` (~664K `_tcache/data.sec.gov` after the first fetch).
+- **Identity:** redacted here as `$EDGAR_IDENTITY` — the SEC fair-access `Name email` string, set via `options.identity` (§1) or the `EDGAR_IDENTITY` env var.
+- **MCP server:** `.venv/bin/trail mcp --transport streamable-http --host 127.0.0.1 --port 8123` → `http://127.0.0.1:8123/mcp`.
 
 ## Not runnable here
 
-- **Restatement-aware PIT:** no restated (re-filed) period exists for AAPL/MSFT in the 2020–2024 window (one filing-date coordinate per (ticker, period)); the mechanism (as-of = latest filing date; `W-PIT-PARTIAL` placement) is verified but cannot be demonstrated against real restated data here.
-- **Piped-stdin `trail repl`:** prompt_toolkit 3.x refuses non-TTY stdin (`Input is not a terminal (fd=0)` → clean exit after the banner) — the REPL itself is fixed (trail-lang PR #55) and verified via pty / the `ReplSession` API (§12).
-- **`trail web` UI/API:** broken (missing `do_GET`/`do_POST` aliases → 501; root-path `rstrip("/")` bug → 404). Underlying REST verified only via a monkeypatch side-probe.
+- **Restatement-aware PIT:** no restated (re-filed) period exists for AAPL/MSFT in the 2020–2024 window (one filing-date coordinate per (ticker, period)); the mechanism (as-of = latest filing date; `W-PIT-PARTIAL` placement) is verified but cannot be demonstrated against real restated data in this window.
+- **Piped-stdin `trail repl`:** prompt_toolkit 3.x refuses non-TTY stdin (`Input is not a terminal (fd=0)` → clean exit after the banner); drive the REPL through a pty (Unix) or the in-process `ReplSession` API (§12).
+- **`trail repl` on the PyPI 0.18.0 wheel:** the REPL fix is on trail-lang main (merged 2026-10-31) but not in the 0.18.0 release — the git upgrade in §12 is required.
+- **`trail web` UI/API:** broken on 0.18.0 (missing `do_GET`/`do_POST` aliases → 501; root-path `rstrip("/")` bug → 404). Underlying REST verified only via a monkeypatch side-probe (§12).
 - **Historical as-of-date PIT queries:** the config has no "as-of date" parameter; PIT manifests as which rows are visible/placed per filing-date coordinate (`auto` vs `naive`), not a query-time date.
-- **Other sources (trail-gmd, trail-fmp):** not installed in this venv; not exercised.
+- **Other sources (trail-gmd, trail-fmp):** not installed; not exercised.
 - **Live-marked trail-edgar tests** (`pytest -m live`): excluded by default (network-heavy); not run.
+
+## Appendix A — developing trail-lang / trail-edgar (editable install from git)
+
+The main flow uses PyPI. If you are developing the engine or the driver, clone both repos and install them editable instead (replaces the `pip install trail-lang trail-edgar` step in §1):
+
+```
+git clone https://github.com/trail-language/trail-lang.git
+git clone https://github.com/trail-language/trail-edgar.git
+.venv/bin/pip install -e "path/to/trail-lang[mcp]" -e path/to/trail-edgar
+```
+
+- The editable install picks up your local commits, so CLI/REPL behavior is that of your working tree (e.g. the REPL fix, PR #55, is on main before the 0.18.0 PyPI release).
+- Extras: on main both `[mcp]` and `[repl]` (`prompt_toolkit>=3`) are declared; on PyPI 0.18.0 only `[mcp]` is.
+- Upstream state at verification time: trail-edgar `main @ bdd58f3` = v0.5.0; the PyPI trail-lang 0.18.0 release includes the `signal` command.
+- Test suites (read-only runs, `-p no:cacheprovider`): trail-edgar `36 passed, 1 deselected`; trail-lang (with the REPL fix) `538 passed, 1 skipped` (incl. 22 REPL tests). One pre-existing engine bug: `ewm_std` returns `None` where `tests/test_ops_factor.py` expects `0.0` (that test fails; everything else passes).
