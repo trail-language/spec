@@ -23,8 +23,8 @@ done! ✨ 🌟 ✨
     - trail
 
 $ pipx inject trail-lang trail-edgar
-  injected package trail-edgar into venv trail-lang
 done! ✨ 🌟 ✨
+  injected package trail-edgar into venv trail-lang
 ```
 
 Verify:
