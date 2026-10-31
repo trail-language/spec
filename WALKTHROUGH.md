@@ -94,7 +94,7 @@ Editable installs wire the `edgar` driver in via the entry-point mechanism; `pre
 
 ### Gotchas
 - `trail --version` does not exist; version comes from `import trail`.
-- The `[mcp]` extra is the only extra declared in `trail-lang` pyproject (`trail-lang[repl]` referenced in CLI help text is NOT declared).
+- On main, the `[mcp]` extra is the only extra declared in `trail-lang` pyproject (the `trail-lang[repl]` referenced in CLI help text is NOT declared); PR #55 adds the `[repl]` extra (`prompt_toolkit>=3`) — the REPL section (§12) is verified against that branch.
 
 ---
 
@@ -618,32 +618,153 @@ There is **no `backtest`** command (`Error: No such command 'backtest'`).
   │ kind  ┆ stdlib macro │
   ```
 - **mcp** — see §10.
-- **repl / web** — both broken in 0.18.0; see §12.
+- **repl** — fixed in trail-lang PR #55 (not yet merged; §12 is verified against main + that branch). **web** — still broken in 0.18.0; see §12.
 
 ---
 
-## 12. REPL / web console (known-broken in 0.18.0)
+## 12. REPL (fixed in trail-lang PR #55)
 
-### `trail repl` — broken (import bug, verified)
-```
-$ printf '?sources\nlag(1,1)\nexit\n' | /tmp/opencode/trail-env/bin/trail repl
-prompt_toolkit is required for the REPL.
-Install it with: pip install trail-lang[repl]
-```
-even **with** prompt_toolkit installed (2.0.10 and 3.0.53 both tested). Root cause: `trail/repl/loop.py:28` does `from prompt_toolkit.shortcuts import print_formatted_text, HTML`; `HTML` is not exported from `prompt_toolkit.shortcuts` (it lives in `prompt_toolkit.formatted_text`). The suggested `[repl]` extra is also not declared in pyproject (only `[mcp]`).
+### Verified baseline
 
-### `ReplSession` in-process (works — but fixture-only)
+- trail-lang **main @ `7998bb7`** (v0.18.0) + **PR #55** `fix/repl-config-and-import` @ `c8f6451` (the REPL fix — **not merged into main**).
+- Rebuilt `/tmp/opencode/trail-env` (CPython 3.13.13; `prompt_toolkit 3.0.53`, `polars 2.1.0`); same work dir and `trail.yaml` as §1–§11.
+- Verified 2026-10-31 (full pty transcripts + lead re-check); all outputs below verbatim from the pty captures (ANSI stripped).
+
+**prompt_toolkit 3.x caveat:** piped stdin is refused (`Warning: Input is not a terminal (fd=0)`, then clean exit after the banner) — a prompt_toolkit limitation, not a trail bug. The sessions below were driven through a pty (`script -qec "trail repl --config trail.yaml" /dev/null < lines.txt`); the in-process `ReplSession` API is the programmatic path.
+
+### Startup + catalog
+
+`trail repl --config trail.yaml` — banner (version now derived from the installed package, not a stale hardcode), then `?` — the catalog for the active config (edgar 40 / meta 5):
+
 ```
-$ cat > repl-probe.py <<'EOF'
-from trail.repl.session import ReplSession
-s = ReplSession()
-for line in ("?", "income.revenue / income.revenue", "margin = income.operating_income / income.revenue", "margin"):
-    r = s.process_input(line)
-    ...
-EOF
-$ /tmp/opencode/trail-env/bin/python repl-probe.py
+  Trail REPL v0.18.0
+  Expression language for financial indicators.
+  Try: income.revenue / balance.total_assets
+  Or:  margin = income.operating_income / income.revenue
+  Help:  ?  ?fields  ?functions  ?sources  ?income
+  Quit:  Ctrl-D or Ctrl-C twice
+trail> ?
+  (2 rows × 2 cols)
+shape: (2, 2)
+┌───────────┬────────┐
+│ namespace ┆ fields │
+│ ---       ┆ ---    │
+│ str       ┆ i64    │
+╞═══════════╪════════╡
+│ edgar     ┆ 40     │
+│ meta      ┆ 5      │
+└───────────┴────────┘
 ```
-Real output (trimmed): `?` → catalog table `edgar 40 / meta 5`; bare expressions evaluate on a **bundled fixture panel** (6 entities × 8 years, e.g. `AAA 2017-12-31 = 1.0`); assignments persist and are referenceable by later lines. **Limitation:** the session computes on `FixtureSource`, never on `trail.yaml` data, so `edgar.*` fields are unavailable in the REPL. Bare scalar literals error as a raw exception (`'int' object has no attribute 'shift'`).
+
+### Bare field on real data
+
+```
+trail> edgar.revenue
+  (9 rows × 3 cols)
+shape: (9, 3)
+┌────────┬─────────────────────┬───────────────┐
+│ entity ┆ time                ┆ __repl_result │
+│ ---    ┆ ---                 ┆ ---           │
+│ str    ┆ datetime[μs]        ┆ f64           │
+╞════════╪═════════════════════╪═══════════════╡
+│ AAPL   ┆ 2020-12-31 00:00:00 ┆ 2.7452e11     │
+│ AAPL   ┆ 2021-12-31 00:00:00 ┆ 3.6582e11     │
+│ AAPL   ┆ 2022-12-31 00:00:00 ┆ 3.9433e11     │
+│ AAPL   ┆ 2023-12-31 00:00:00 ┆ 3.8328e11     │
+│ AAPL   ┆ 2024-12-31 00:00:00 ┆ 3.9104e11     │
+│ MSFT   ┆ 2021-12-31 00:00:00 ┆ 1.6809e11     │
+│ MSFT   ┆ 2022-12-31 00:00:00 ┆ 1.9827e11     │
+│ MSFT   ┆ 2023-12-31 00:00:00 ┆ 2.1192e11     │
+│ MSFT   ┆ 2024-12-31 00:00:00 ┆ 2.4512e11     │
+└────────┴─────────────────────┴───────────────┘
+```
+
+The 9-row frame is identical to `first.csv` (§2) — the session is config-backed (real SEC data), not the bundled fixture panel.
+
+### Assignment
+
+```
+trail> rev = edgar.revenue
+  (9 rows × 3 cols)
+shape: (9, 3)
+┌────────┬─────────────────────┬───────────┐
+│ entity ┆ time                ┆ rev       │
+│ ---    ┆ ---                 ┆ ---       │
+│ str    ┆ datetime[μs]        ┆ f64       │
+╞════════╪═════════════════════╪═══════════╡
+│ AAPL   ┆ 2020-12-31 00:00:00 ┆ 2.7452e11 │
+│ AAPL   ┆ 2021-12-31 00:00:00 ┆ 3.6582e11 │
+│ AAPL   ┆ 2022-12-31 00:00:00 ┆ 3.9433e11 │
+│ AAPL   ┆ 2023-12-31 00:00:00 ┆ 3.8328e11 │
+│ AAPL   ┆ 2024-12-31 00:00:00 ┆ 3.9104e11 │
+│ MSFT   ┆ 2021-12-31 00:00:00 ┆ 1.6809e11 │
+│ MSFT   ┆ 2022-12-31 00:00:00 ┆ 1.9827e11 │
+│ MSFT   ┆ 2023-12-31 00:00:00 ┆ 2.1192e11 │
+│ MSFT   ┆ 2024-12-31 00:00:00 ┆ 2.4512e11 │
+└────────┴─────────────────────┴───────────┘
+```
+
+### `def` + call (user function on real data)
+
+```
+trail> def dbl(x) = x * 2
+  (no output)
+trail> dbl(edgar.revenue)
+  (9 rows × 3 cols)
+shape: (9, 3)
+┌────────┬─────────────────────┬───────────────┐
+│ entity ┆ time                ┆ __repl_result │
+│ ---    ┆ ---                 ┆ ---           │
+│ str    ┆ datetime[μs]        ┆ f64           │
+╞════════╪═════════════════════╪═══════════════╡
+│ AAPL   ┆ 2020-12-31 00:00:00 ┆ 5.4903e11     │
+│ AAPL   ┆ 2021-12-31 00:00:00 ┆ 7.3163e11     │
+│ AAPL   ┆ 2022-12-31 00:00:00 ┆ 7.8866e11     │
+│ AAPL   ┆ 2023-12-31 00:00:00 ┆ 7.6657e11     │
+│ AAPL   ┆ 2024-12-31 00:00:00 ┆ 7.8207e11     │
+│ MSFT   ┆ 2021-12-31 00:00:00 ┆ 3.3618e11     │
+│ MSFT   ┆ 2022-12-31 00:00:00 ┆ 3.9654e11     │
+│ MSFT   ┆ 2023-12-31 00:00:00 ┆ 4.2383e11     │
+│ MSFT   ┆ 2024-12-31 00:00:00 ┆ 4.9024e11     │
+└────────┴─────────────────────┴───────────────┘
+```
+
+### Universe decl + model binding (7-row screen)
+
+```
+trail> universe big = stocks where edgar.revenue > 200000000000
+  (no output)
+trail> model m on big { export r = edgar.revenue }
+  (7 rows × 3 cols)
+shape: (7, 3)
+┌────────┬─────────────────────┬───────────┐
+│ entity ┆ time                ┆ r         │
+│ ---    ┆ ---                 ┆ ---       │
+│ str    ┆ datetime[μs]        ┆ f64       │
+╞════════╪═════════════════════╪═══════════╡
+│ AAPL   ┆ 2020-12-31 00:00:00 ┆ 2.7452e11 │
+│ AAPL   ┆ 2021-12-31 00:00:00 ┆ 3.6582e11 │
+│ AAPL   ┆ 2022-12-31 00:00:00 ┆ 3.9433e11 │
+│ AAPL   ┆ 2023-12-31 00:00:00 ┆ 3.8328e11 │
+│ AAPL   ┆ 2024-12-31 00:00:00 ┆ 3.9104e11 │
+│ MSFT   ┆ 2023-12-31 00:00:00 ┆ 2.1192e11 │
+│ MSFT   ┆ 2024-12-31 00:00:00 ┆ 2.4512e11 │
+└────────┴─────────────────────┴───────────┘
+```
+
+All 5 AAPL rows pass the $200B screen; MSFT keeps only 2023/2024 (2021/2022 < $200B). The universe is stored in the session and bound by the model.
+
+### Coded error (wrong arity → shared validator)
+
+```
+trail> lag(edgar.revenue)
+  Error: E-FUNC-ARITY lag takes 2..2 args, got 1
+```
+
+### Known limitation (cosmetic)
+
+The banner's static "Try:" hint line still shows the fixture fields (`income.revenue`, `balance.total_assets`) in a config-backed session — one-line cosmetic in `trail/repl/loop.py`; follow-up candidate for trail-lang.
+
 
 ### `trail web` — broken (verified)
 ```
@@ -676,7 +797,7 @@ Root cause 2: `_do_GET` does `path = parsed.path.rstrip("/")` then compares `pat
 ## Not runnable here
 
 - **Restatement-aware PIT:** no restated (re-filed) period exists for AAPL/MSFT in the 2020–2024 window (one filing-date coordinate per (ticker, period)); the mechanism (as-of = latest filing date; `W-PIT-PARTIAL` placement) is verified but cannot be demonstrated against real restated data here.
-- **Interactive `trail repl`:** broken by the `prompt_toolkit.shortcuts.HTML` import bug on all current prompt_toolkit versions (product bug, not environment).
+- **Piped-stdin `trail repl`:** prompt_toolkit 3.x refuses non-TTY stdin (`Input is not a terminal (fd=0)` → clean exit after the banner) — the REPL itself is fixed (trail-lang PR #55) and verified via pty / the `ReplSession` API (§12).
 - **`trail web` UI/API:** broken (missing `do_GET`/`do_POST` aliases → 501; root-path `rstrip("/")` bug → 404). Underlying REST verified only via a monkeypatch side-probe.
 - **Historical as-of-date PIT queries:** the config has no "as-of date" parameter; PIT manifests as which rows are visible/placed per filing-date coordinate (`auto` vs `naive`), not a query-time date.
 - **Other sources (trail-gmd, trail-fmp):** not installed in this venv; not exercised.
